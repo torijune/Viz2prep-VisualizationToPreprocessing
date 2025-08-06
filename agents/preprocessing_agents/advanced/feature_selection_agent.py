@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, List, Optional
 from langchain_core.runnables import RunnableLambda
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 
 
 def select_features(inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -25,6 +27,12 @@ def select_features(inputs: Dict[str, Any]) -> Dict[str, Any]:
     n_features = inputs.get("n_features", None)  # 선택할 특성 수
     threshold = inputs.get("selection_threshold", 0.01)  # 임계값
     
+    # EDA 결과물들 가져오기
+    corr_analysis_text = inputs.get("corr_analysis_text", "")
+    corr_image_paths = inputs.get("corr_image_paths", [])
+    numeric_analysis_text = inputs.get("numeric_analysis_text", "")
+    text_analysis = inputs.get("text_analysis", "")
+    
     # 타겟 변수 분리
     if target_column and target_column in df.columns:
         X = df.drop(columns=[target_column])
@@ -40,100 +48,183 @@ def select_features(inputs: Dict[str, Any]) -> Dict[str, Any]:
     if n_features:
         print(f"  목표 특성 수: {n_features}")
     
-    selected_features = []
+    # MultiModal LLM을 사용한 전처리 코드 생성
+    if method == "auto":
+        preprocessing_code = generate_feature_selection_code_with_llm(
+            df, X, y, original_features, corr_analysis_text, corr_image_paths,
+            numeric_analysis_text, text_analysis, n_features, threshold
+        )
+        
+        # 생성된 코드 실행
+        try:
+            exec(preprocessing_code)
+            print("LLM 생성 코드로 특성 선택 완료")
+        except Exception as e:
+            print(f"LLM 생성 코드 실행 오류: {e}")
+            # 폴백: 기본 자동 처리
+            selected_features = apply_basic_feature_selection(X, threshold)
+            if selected_features:
+                if target_column and target_column in df.columns:
+                    df_selected = df[selected_features + [target_column]]
+                else:
+                    df_selected = df[selected_features]
+                df = df_selected
+    else:
+        # 수동 방법 사용
+        selected_features = apply_manual_feature_selection(X, y, method, n_features, threshold)
+        if selected_features:
+            if target_column and target_column in df.columns:
+                df_selected = df[selected_features + [target_column]]
+            else:
+                df_selected = df[selected_features]
+            df = df_selected
+    
+    # 선택 결과 정보
+    final_columns = df.columns.tolist()
     selection_info = {
         'original_features': original_features,
         'method': method,
-        'threshold': threshold
+        'threshold': threshold,
+        'selected_features': final_columns,
+        'final_method': method,
+        'selected_count': len(final_columns),
+        'removed_count': len(original_features) - len(final_columns)
     }
     
-    if method == "auto":
-        # 자동 선택: 데이터 크기에 따라 결정
-        if len(original_features) > 50:
-            # 특성이 많은 경우 상관관계 기반 선택
-            selected_features = select_by_correlation(X, threshold)
-            method = "correlation"
-        else:
-            # 특성이 적은 경우 분산 기반 선택
-            selected_features = select_by_variance(X, threshold)
-            method = "variance"
+    print(f"  선택된 특성: {len(final_columns)}개")
+    print(f"  제거된 특성: {len(original_features) - len(final_columns)}개")
     
-    elif method == "variance":
-        # 분산 기반 선택
-        selected_features = select_by_variance(X, threshold)
+    return {
+        **inputs,
+        "dataframe": df,
+        "selection_info": selection_info
+    }
+
+
+def generate_feature_selection_code_with_llm(df: pd.DataFrame, X: pd.DataFrame, y: Optional[pd.Series],
+                                          original_features: List[str], corr_analysis_text: str, 
+                                          corr_image_paths: List[str], numeric_analysis_text: str,
+                                          text_analysis: str, n_features: Optional[int], threshold: float) -> str:
+    """
+    MultiModal LLM을 사용하여 특성 선택 코드를 생성합니다.
+    """
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.1,
+        max_tokens=2000
+    )
     
+    # 특성 정보 요약
+    feature_summary = []
+    for col in original_features:
+        if col in X.columns:
+            if X[col].dtype in [np.number]:
+                stats = X[col].describe()
+                summary = f"{col}: numeric, mean={stats['mean']:.2f}, std={stats['std']:.2f}"
+            else:
+                unique_count = X[col].nunique()
+                summary = f"{col}: categorical, {unique_count} unique values"
+            feature_summary.append(summary)
+    
+    prompt = f"""
+You are a data preprocessing expert. Please write Python code to perform feature selection based on the following information.
+
+=== Dataset Information ===
+- Data size: {df.shape[0]} rows x {df.shape[1]} columns
+- Original features: {original_features}
+- Target feature count: {n_features or 'automatic'}
+- Dataset head:
+{df.head().to_string()}
+
+=== Feature Information ===
+{chr(10).join(feature_summary)}
+
+=== Correlation Analysis Results ===
+{corr_analysis_text}
+
+=== Numeric Variable Analysis ===
+{numeric_analysis_text}
+
+=== Overall Data Analysis ===
+{text_analysis}
+
+=== Requirements ===
+1. Select only one from highly correlated variable pairs
+2. Remove variables with low variance
+3. Choose appropriate method based on number of features
+4. Code must be executable
+
+Please write code in the following format:
+```python
+# Feature selection code
+# df is an already defined DataFrame
+# Update df with selected features
+```
+
+Return only the code without explanations.
+"""
+
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        code = response.content
+        
+        # 코드 블록에서 실제 코드만 추출
+        if "```python" in code:
+            code = code.split("```python")[1].split("```")[0].strip()
+        elif "```" in code:
+            code = code.split("```")[1].split("```")[0].strip()
+        
+        return code
+    except Exception as e:
+        print(f"LLM 코드 생성 오류: {e}")
+        return ""
+
+
+def apply_basic_feature_selection(X: pd.DataFrame, threshold: float) -> List[str]:
+    """
+    기본 특성 선택 방법을 적용합니다.
+    """
+    # 분산 기반 선택
+    variances = X.var()
+    selected = variances[variances > threshold].index.tolist()
+    print(f"    → 분산 기반 선택: {len(selected)}개 특성 선택 (임계값: {threshold})")
+    return selected
+
+
+def apply_manual_feature_selection(X: pd.DataFrame, y: Optional[pd.Series], 
+                                 method: str, n_features: Optional[int], threshold: float) -> List[str]:
+    """
+    수동 특성 선택 방법을 적용합니다.
+    """
+    if method == "variance":
+        return select_by_variance(X, threshold)
     elif method == "correlation":
-        # 상관관계 기반 선택
-        selected_features = select_by_correlation(X, threshold)
-    
+        return select_by_correlation(X, threshold)
     elif method == "mutual_info":
-        # 상호정보량 기반 선택
         if y is not None:
-            selected_features = select_by_mutual_info(X, y, n_features)
+            return select_by_mutual_info(X, y, n_features)
         else:
             print("  ⚠️  상호정보량 선택을 위한 타겟 변수가 없어 분산 기반으로 대체")
-            selected_features = select_by_variance(X, threshold)
-            method = "variance"
-    
+            return select_by_variance(X, threshold)
     elif method == "lasso":
-        # Lasso 기반 선택
         if y is not None:
-            selected_features = select_by_lasso(X, y, threshold)
+            return select_by_lasso(X, y, threshold)
         else:
             print("  ⚠️  Lasso 선택을 위한 타겟 변수가 없어 분산 기반으로 대체")
-            selected_features = select_by_variance(X, threshold)
-            method = "variance"
-    
+            return select_by_variance(X, threshold)
     elif method == "recursive":
-        # 순환적 특성 제거
         if y is not None:
-            selected_features = select_by_recursive(X, y, n_features)
+            return select_by_recursive(X, y, n_features)
         else:
             print("  ⚠️  순환적 선택을 위한 타겟 변수가 없어 분산 기반으로 대체")
-            selected_features = select_by_variance(X, threshold)
-            method = "variance"
-    
-    # 선택된 특성으로 데이터프레임 생성
-    if selected_features:
-        if target_column and target_column in df.columns:
-            df_selected = df[selected_features + [target_column]]
-        else:
-            df_selected = df[selected_features]
-        
-        selection_info.update({
-            'selected_features': selected_features,
-            'final_method': method,
-            'selected_count': len(selected_features),
-            'removed_count': len(original_features) - len(selected_features)
-        })
-        
-        print(f"  선택된 특성: {len(selected_features)}개")
-        print(f"  제거된 특성: {len(original_features) - len(selected_features)}개")
-        
-        return {
-            **inputs,
-            "dataframe": df_selected,
-            "selection_info": selection_info
-        }
+            return select_by_variance(X, threshold)
     else:
-        print("  ⚠️  선택된 특성이 없어 원본 데이터를 유지합니다.")
-        return {
-            **inputs,
-            "dataframe": df,
-            "selection_info": selection_info
-        }
+        return select_by_variance(X, threshold)
 
 
 def select_by_variance(X: pd.DataFrame, threshold: float) -> List[str]:
     """
     분산 기반 특성 선택
-    
-    Args:
-        X: 특성 데이터프레임
-        threshold: 분산 임계값
-        
-    Returns:
-        선택된 특성 리스트
     """
     variances = X.var()
     selected = variances[variances > threshold].index.tolist()
@@ -144,13 +235,6 @@ def select_by_variance(X: pd.DataFrame, threshold: float) -> List[str]:
 def select_by_correlation(X: pd.DataFrame, threshold: float) -> List[str]:
     """
     상관관계 기반 특성 선택
-    
-    Args:
-        X: 특성 데이터프레임
-        threshold: 상관관계 임계값
-        
-    Returns:
-        선택된 특성 리스트
     """
     # 수치형 컬럼만 선택
     numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
@@ -182,14 +266,6 @@ def select_by_correlation(X: pd.DataFrame, threshold: float) -> List[str]:
 def select_by_mutual_info(X: pd.DataFrame, y: pd.Series, n_features: int) -> List[str]:
     """
     상호정보량 기반 특성 선택
-    
-    Args:
-        X: 특성 데이터프레임
-        y: 타겟 변수
-        n_features: 선택할 특성 수
-        
-    Returns:
-        선택된 특성 리스트
     """
     try:
         from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
@@ -228,14 +304,6 @@ def select_by_mutual_info(X: pd.DataFrame, y: pd.Series, n_features: int) -> Lis
 def select_by_lasso(X: pd.DataFrame, y: pd.Series, threshold: float) -> List[str]:
     """
     Lasso 기반 특성 선택
-    
-    Args:
-        X: 특성 데이터프레임
-        y: 타겟 변수
-        threshold: 계수 임계값
-        
-    Returns:
-        선택된 특성 리스트
     """
     try:
         from sklearn.linear_model import Lasso
@@ -264,14 +332,6 @@ def select_by_lasso(X: pd.DataFrame, y: pd.Series, threshold: float) -> List[str
 def select_by_recursive(X: pd.DataFrame, y: pd.Series, n_features: int) -> List[str]:
     """
     순환적 특성 제거
-    
-    Args:
-        X: 특성 데이터프레임
-        y: 타겟 변수
-        n_features: 선택할 특성 수
-        
-    Returns:
-        선택된 특성 리스트
     """
     try:
         from sklearn.feature_selection import RFE

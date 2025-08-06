@@ -8,4 +8,7 @@ seaborn==0.13.2
 scikit-learn==1.7.1
 pillow==10.2.0
 openai==1.58.1
-python-dotenv==1.0.1 
+python-dotenv==1.0.1
+scipy==1.13.1
+imbalanced-learn==0.12.2
+umap-learn==0.5.5 

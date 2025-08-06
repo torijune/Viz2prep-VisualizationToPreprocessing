@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, List, Optional
 from langchain_core.runnables import RunnableLambda
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 
 
 def reduce_dimensions(inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -24,13 +26,18 @@ def reduce_dimensions(inputs: Dict[str, Any]) -> Dict[str, Any]:
     n_components = inputs.get("n_components", None)  # 축소할 차원 수
     target_column = inputs.get("target_column", None)
     
+    # EDA 결과물들 가져오기
+    text_analysis = inputs.get("text_analysis", "")
+    corr_analysis_text = inputs.get("corr_analysis_text", "")
+    numeric_analysis_text = inputs.get("numeric_analysis_text", "")
+    
     # 수치형 컬럼만 선택
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
     
-    if target_column and target_column in numeric_cols:
-        numeric_cols.remove(target_column)
+    if target_column and target_column in numeric_columns:
+        numeric_columns.remove(target_column)
     
-    if len(numeric_cols) < 2:
+    if len(numeric_columns) < 2:
         print("차원 축소: 수치형 변수가 2개 미만입니다.")
         return {
             **inputs,
@@ -40,51 +47,141 @@ def reduce_dimensions(inputs: Dict[str, Any]) -> Dict[str, Any]:
     
     # 자동으로 차원 수 결정
     if n_components is None:
-        n_components = min(len(numeric_cols), 10)  # 최대 10개 차원으로 제한
+        n_components = min(len(numeric_columns), 10)  # 최대 10개 차원으로 제한
     
     print(f"차원 축소 시작: {method} 방법")
-    print(f"  원본 차원: {len(numeric_cols)}")
+    print(f"  원본 차원: {len(numeric_columns)}")
     print(f"  목표 차원: {n_components}")
     
+    # MultiModal LLM을 사용한 전처리 코드 생성
+    if method == "auto":
+        preprocessing_code = generate_dimension_reduction_code_with_llm(
+            df, numeric_columns, target_column, n_components,
+            text_analysis, corr_analysis_text, numeric_analysis_text
+        )
+        
+        # 생성된 코드 실행
+        try:
+            exec(preprocessing_code)
+            print("LLM 생성 코드로 차원 축소 완료")
+        except Exception as e:
+            print(f"LLM 생성 코드 실행 오류: {e}")
+            # 폴백: 기본 자동 처리
+            df = apply_basic_dimension_reduction(df, numeric_columns, target_column, n_components)
+    else:
+        # 수동 방법 사용
+        df = apply_manual_dimension_reduction(df, numeric_columns, target_column, method, n_components, inputs)
+    
+    # 축소 결과 정보
     dimension_info = {
-        'original_dimensions': len(numeric_cols),
+        'original_dimensions': len(numeric_columns),
         'target_dimensions': n_components,
         'method': method,
-        'numeric_columns': numeric_cols
+        'numeric_columns': numeric_columns,
+        'final_method': method,
+        'reduced_columns': [col for col in df.columns if col not in numeric_columns and col != target_column],
+        'variance_explained': get_variance_explained(df[numeric_columns], df) if method == "pca" else None
     }
     
-    if method == "auto":
-        # 자동 선택: 데이터 크기에 따라 결정
-        if len(numeric_cols) > 50:
-            # 고차원 데이터: PCA 사용
-            df_reduced = apply_pca(df[numeric_cols], n_components)
-            method = "pca"
-        else:
-            # 저차원 데이터: t-SNE 사용
-            df_reduced = apply_tsne(df[numeric_cols], n_components)
-            method = "tsne"
+    print(f"차원 축소 완료: {len(dimension_info['reduced_columns'])}개 차원으로 축소")
     
-    elif method == "pca":
-        df_reduced = apply_pca(df[numeric_cols], n_components)
+    return {
+        **inputs,
+        "dataframe": df,
+        "dimension_info": dimension_info
+    }
+
+
+def generate_dimension_reduction_code_with_llm(df: pd.DataFrame, numeric_columns: List[str],
+                                            target_column: Optional[str], n_components: int,
+                                            text_analysis: str, corr_analysis_text: str,
+                                            numeric_analysis_text: str) -> str:
+    """
+    MultiModal LLM을 사용하여 차원 축소 코드를 생성합니다.
+    """
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.1,
+        max_tokens=2000
+    )
     
-    elif method == "tsne":
-        df_reduced = apply_tsne(df[numeric_cols], n_components)
+    # 수치형 변수 정보 요약
+    numeric_summary = []
+    for col in numeric_columns:
+        stats = df[col].describe()
+        summary = f"{col}: mean={stats['mean']:.2f}, std={stats['std']:.2f}, range=[{stats['min']:.2f}, {stats['max']:.2f}]"
+        numeric_summary.append(summary)
     
-    elif method == "umap":
-        df_reduced = apply_umap(df[numeric_cols], n_components)
-    
-    elif method == "lda":
-        if target_column and target_column in df.columns:
-            df_reduced = apply_lda(df[numeric_cols], df[target_column], n_components)
-        else:
-            print("  ⚠️  LDA를 위한 타겟 변수가 없어 PCA로 대체")
-            df_reduced = apply_pca(df[numeric_cols], n_components)
-            method = "pca"
-    
-    else:
-        print(f"  ⚠️  알 수 없는 방법 '{method}'입니다. PCA를 사용합니다.")
-        df_reduced = apply_pca(df[numeric_cols], n_components)
+    prompt = f"""
+You are a data preprocessing expert. Please write Python code to perform dimensionality reduction based on the following information.
+
+=== Dataset Information ===
+- Data size: {df.shape[0]} rows x {df.shape[1]} columns
+- Numeric columns: {numeric_columns}
+- Target variable: {target_column or 'None'}
+- Target dimensions: {n_components}
+- Dataset head:
+{df.head().to_string()}
+
+=== Numeric Variable Statistics ===
+{chr(10).join(numeric_summary)}
+
+=== Overall Data Analysis ===
+{text_analysis}
+
+=== Correlation Analysis ===
+{corr_analysis_text}
+
+=== Numeric Variable Analysis ===
+{numeric_analysis_text}
+
+=== Requirements ===
+1. Choose appropriate method based on data size:
+   - High-dimensional data (>50): PCA
+   - Low-dimensional data: t-SNE
+2. Consider LDA if target variable exists
+3. Code must be executable
+
+Please write code in the following format:
+```python
+# Dimensionality reduction code
+# df is an already defined DataFrame
+# Update df with reduced features
+```
+
+Return only the code without explanations.
+"""
+
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        code = response.content
+        
+        # 코드 블록에서 실제 코드만 추출
+        if "```python" in code:
+            code = code.split("```python")[1].split("```")[0].strip()
+        elif "```" in code:
+            code = code.split("```")[1].split("```")[0].strip()
+        
+        return code
+    except Exception as e:
+        print(f"LLM 코드 생성 오류: {e}")
+        return ""
+
+
+def apply_basic_dimension_reduction(df: pd.DataFrame, numeric_columns: List[str],
+                                 target_column: Optional[str], n_components: int) -> pd.DataFrame:
+    """
+    기본 차원 축소 방법을 적용합니다.
+    """
+    # 자동 선택: 데이터 크기에 따라 결정
+    if len(numeric_columns) > 50:
+        # 고차원 데이터: PCA 사용
+        df_reduced = apply_pca(df[numeric_columns], n_components)
         method = "pca"
+    else:
+        # 저차원 데이터: t-SNE 사용
+        df_reduced = apply_tsne(df[numeric_columns], n_components)
+        method = "tsne"
     
     # 축소된 특성과 원본 특성 결합
     if target_column and target_column in df.columns:
@@ -92,31 +189,44 @@ def reduce_dimensions(inputs: Dict[str, Any]) -> Dict[str, Any]:
     else:
         df_final = df_reduced
     
-    dimension_info.update({
-        'final_method': method,
-        'reduced_columns': df_reduced.columns.tolist(),
-        'variance_explained': get_variance_explained(df[numeric_cols], df_reduced) if method == "pca" else None
-    })
+    print(f"  {method} 방법으로 차원 축소 완료")
+    return df_final
+
+
+def apply_manual_dimension_reduction(df: pd.DataFrame, numeric_columns: List[str],
+                                  target_column: Optional[str], method: str,
+                                  n_components: int, inputs: Dict) -> pd.DataFrame:
+    """
+    수동 차원 축소 방법을 적용합니다.
+    """
+    if method == "pca":
+        df_reduced = apply_pca(df[numeric_columns], n_components)
+    elif method == "tsne":
+        df_reduced = apply_tsne(df[numeric_columns], n_components)
+    elif method == "umap":
+        df_reduced = apply_umap(df[numeric_columns], n_components)
+    elif method == "lda":
+        if target_column and target_column in df.columns:
+            df_reduced = apply_lda(df[numeric_columns], df[target_column], n_components)
+        else:
+            print("  ⚠️  LDA를 위한 타겟 변수가 없어 PCA로 대체")
+            df_reduced = apply_pca(df[numeric_columns], n_components)
+    else:
+        print(f"  ⚠️  알 수 없는 방법 '{method}'입니다. PCA를 사용합니다.")
+        df_reduced = apply_pca(df[numeric_columns], n_components)
     
-    print(f"차원 축소 완료: {len(df_reduced.columns)}개 차원으로 축소")
+    # 축소된 특성과 원본 특성 결합
+    if target_column and target_column in df.columns:
+        df_final = pd.concat([df_reduced, df[target_column]], axis=1)
+    else:
+        df_final = df_reduced
     
-    return {
-        **inputs,
-        "dataframe": df_final,
-        "dimension_info": dimension_info
-    }
+    return df_final
 
 
 def apply_pca(X: pd.DataFrame, n_components: int) -> pd.DataFrame:
     """
     PCA를 적용하여 차원 축소
-    
-    Args:
-        X: 특성 데이터프레임
-        n_components: 축소할 차원 수
-        
-    Returns:
-        축소된 데이터프레임
     """
     try:
         from sklearn.decomposition import PCA
@@ -139,13 +249,6 @@ def apply_pca(X: pd.DataFrame, n_components: int) -> pd.DataFrame:
 def apply_tsne(X: pd.DataFrame, n_components: int) -> pd.DataFrame:
     """
     t-SNE를 적용하여 차원 축소
-    
-    Args:
-        X: 특성 데이터프레임
-        n_components: 축소할 차원 수
-        
-    Returns:
-        축소된 데이터프레임
     """
     try:
         from sklearn.manifold import TSNE
@@ -176,13 +279,6 @@ def apply_tsne(X: pd.DataFrame, n_components: int) -> pd.DataFrame:
 def apply_umap(X: pd.DataFrame, n_components: int) -> pd.DataFrame:
     """
     UMAP을 적용하여 차원 축소
-    
-    Args:
-        X: 특성 데이터프레임
-        n_components: 축소할 차원 수
-        
-    Returns:
-        축소된 데이터프레임
     """
     try:
         import umap
@@ -213,14 +309,6 @@ def apply_umap(X: pd.DataFrame, n_components: int) -> pd.DataFrame:
 def apply_lda(X: pd.DataFrame, y: pd.Series, n_components: int) -> pd.DataFrame:
     """
     LDA를 적용하여 차원 축소
-    
-    Args:
-        X: 특성 데이터프레임
-        y: 타겟 변수
-        n_components: 축소할 차원 수
-        
-    Returns:
-        축소된 데이터프레임
     """
     try:
         from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -247,13 +335,6 @@ def apply_lda(X: pd.DataFrame, y: pd.Series, n_components: int) -> pd.DataFrame:
 def get_variance_explained(X_original: pd.DataFrame, X_reduced: pd.DataFrame) -> float:
     """
     PCA의 분산 설명률 계산
-    
-    Args:
-        X_original: 원본 데이터
-        X_reduced: 축소된 데이터
-        
-    Returns:
-        분산 설명률
     """
     try:
         from sklearn.decomposition import PCA
