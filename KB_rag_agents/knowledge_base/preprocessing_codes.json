@@ -1,0 +1,276 @@
+{
+  "missing_values": {
+    "description": "결측값 처리 관련 코드들",
+    "techniques": [
+      {
+        "name": "fill_categorical_mode",
+        "description": "범주형 변수의 결측값을 최빈값(mode)으로 대체합니다. 각 카테고리의 빈도 수를 계산하여 가장 자주 등장하는 값을 찾아 결측 셀에 적용하며, 데이터 분포를 크게 왜곡하지 않고 간단하게 결측을 처리할 수 있습니다.",
+        "use_case": "범주형 결측값 처리",
+        "keywords": ["categorical", "mode", "fill", "missing"]
+      },
+      {
+        "name": "fill_numerical_median",
+        "description": "수치형 변수의 결측값을 중앙값(median)으로 대체합니다. 이상치의 영향을 최소화하면서 대표 값을 사용해 결측을 처리하므로, 분포가 치우쳐 있거나 극단값(outlier)이 있을 때 유용합니다.",
+        "use_case": "수치형 결측값 처리",
+        "keywords": ["numerical", "median", "fill", "missing"]
+      },
+      {
+        "name": "fill_numerical_mean",
+        "description": "수치형 변수의 결측값을 평균(mean)으로 대체합니다. 전체 데이터의 평균을 활용하므로 계산이 간단하고 빠르지만, 이상치에 민감하므로 분포가 정규에 가깝고 이상치가 적은 경우에 사용합니다.",
+        "use_case": "수치형 결측값 처리",
+        "keywords": ["numerical", "mean", "fill", "missing"]
+      },
+      {
+        "name": "advanced_imputation",
+        "description": "K-최근접 이웃(KNN) 알고리즘을 사용해 결측값을 대체합니다. 각 결측 샘플에 대해 가장 유사한 K개의 이웃을 찾아 이들의 값을 평균하거나 다수결로 결측을 채우므로, 복잡한 결측 패턴에도 유연하게 대응할 수 있습니다.",
+        "use_case": "복잡한 결측값 패턴 처리",
+        "keywords": ["knn", "imputation", "advanced", "missing"]
+      },
+      {
+        "name": "add_missing_indicator",
+        "description": "결측이 발생한 위치를 표시하는 이진 플래그 컬럼을 추가합니다. 모델이 결측 여부 자체를 특징으로 학습할 수 있습니다.",
+        "use_case": "결측 자체가 의미가 있을 때",
+        "keywords": ["missing indicator", "flag", "feature"]
+      },
+      {
+        "name": "groupwise_imputation",
+        "description": "범주형 그룹별(예: 지역, 카테고리) 중앙값 또는 평균으로 결측을 대체합니다. 그룹 간 분포 차이를 반영할 수 있습니다.",
+        "use_case": "그룹별 통계가 의미가 있을 때",
+        "keywords": ["group imputation", "median by group", "mean by group"]
+      }
+    ]
+  },
+  "outliers": {
+    "description": "이상치 처리 관련 코드들",
+    "techniques": [
+      {
+        "name": "iqr_outlier_detection",
+        "description": "사분위수(IQR)를 기반으로 이상치를 탐지하고 지정한 범위(1.5 × IQR) 밖의 값을 제거하거나 한계치로 클리핑합니다. 비모수적(non-parametric) 방법이므로 데이터 분포 가정 없이 이상치를 처리할 수 있습니다.",
+        "use_case": "일반적인 이상치 처리",
+        "keywords": ["iqr", "outlier", "detection", "capping"]
+      },
+      {
+        "name": "zscore_outlier_detection",
+        "description": "Z-점수(Z-score)를 이용해 평균으로부터 표준편차 단위로 벗어난 값을 이상치로 간주합니다. 통상적으로 |Z| > 3 기준을 사용하며, 데이터가 정규분포에 가깝다고 가정할 때 유용합니다.",
+        "use_case": "정규분포 데이터의 이상치 처리",
+        "keywords": ["zscore", "outlier", "normal distribution", "3sigma"]
+      },
+      {
+        "name": "isolation_forest_outliers",
+        "description": "Isolation Forest 모델을 이용해 다차원 이상치를 탐지합니다. 트리 구조로 랜덤하게 분할하면서 고립되기 쉬운 이상치를 찾아내므로, 복잡한 다변량 이상치 탐지에 효과적입니다.",
+        "use_case": "다차원 이상치 탐지",
+        "keywords": ["isolation forest", "multivariate", "outlier", "removal"]
+      },
+      {
+        "name": "winsorization",
+        "description": "극단값을 지정 퍼센트(예: 상·하위 1%)의 분위수 값으로 클리핑합니다. 아예 제거하지 않고 분포 범위 내로 제한합니다.",
+        "use_case": "극단값이 많지만 데이터 손실을 최소화하고 싶을 때",
+        "keywords": ["winsorize", "clipping", "percentile"]
+      },
+      {
+        "name": "power_transform",
+        "description": "Yeo-Johnson 또는 Box-Cox 변환으로 분포를 정규에 가깝게 만듭니다. 연속형 변수의 왜도(skewness)를 줄이고 이상치 영향을 완화합니다.",
+        "use_case": "왜도가 심한 수치형 변수 정규화",
+        "keywords": ["yeo-johnson", "box-cox", "power transform"]
+      }
+    ]
+  },
+  "categorical_encoding": {
+    "description": "범주형 변수 인코딩 관련 코드들",
+    "techniques": [
+      {
+        "name": "label_encoding",
+        "description": "각 범주형 값을 정수 레이블로 매핑합니다. 간단하고 메모리를 적게 사용하지만, 레이블 간 순서(order)가 없는 경우에도 순서가 있다고 모델이 오해할 수 있어 주의해야 합니다.",
+        "use_case": "고유값이 적은 범주형 변수",
+        "keywords": ["label", "encoding", "categorical", "low cardinality"]
+      },
+      {
+        "name": "onehot_encoding",
+        "description": "각 범주 카테고리를 이진(dummy) 컬럼으로 분리합니다. 모델에 순서나 크기 정보를 부여하지 않으면서 범주형 데이터를 효과적으로 처리하지만, 고유값이 많을수록 차원이 크게 늘어날 수 있습니다.",
+        "use_case": "중간 수준의 고유값을 가진 범주형 변수",
+        "keywords": ["onehot", "encoding", "categorical", "dummy"]
+      },
+      {
+        "name": "frequency_encoding",
+        "description": "각 범주형 값의 빈도를 계산해 해당 빈도로 대체합니다. 고유값이 많은 범주형 변수에서도 차원 폭발 없이 간단하게 인코딩할 수 있지만, 빈도가 타겟과 높은 상관을 가질 수 있어 주의가 필요합니다.",
+        "use_case": "고유값이 많은 범주형 변수",
+        "keywords": ["frequency", "encoding", "categorical", "high cardinality"]
+      },
+      {
+        "name": "ordinal_encoding",
+        "description": "순서가 있는 범주형 변수를 0,1,2… 정수로 매핑합니다. 범주 간 순위 정보가 있을 때 사용합니다.",
+        "use_case": "순서형 범주형 변수",
+        "keywords": ["ordinal", "encoding", "ordered"]
+      },
+      {
+        "name": "target_encoding",
+        "description": "각 범주별 타겟의 평균 또는 통계치를 매핑합니다. 고유값이 많아도 차원 폭발 없이 강력한 성능을 낼 수 있습니다.",
+        "use_case": "고차원 범주형 변수",
+        "keywords": ["target", "mean encoding", "likelihood"]
+      },
+      {
+        "name": "feature_hashing",
+        "description": "대규모 범주형 변수를 고정 크기 벡터로 해싱합니다. 메모리 효율적이며 온라인/스트리밍 처리에 적합합니다.",
+        "use_case": "수백만개 이상 고유값 처리",
+        "keywords": ["hashing", "vectorization", "feature hashing"]
+      }
+    ]
+  },
+  "scaling": {
+    "description": "스케일링 관련 코드들",
+    "techniques": [
+      {
+        "name": "standard_scaling",
+        "description": "평균 0과 표준편차 1로 데이터를 정규화합니다. SVM, KNN, 로지스틱 회귀 등 입력 특성 스케일에 민감한 모델에서 주로 사용되며, 이상치에 취약하므로 사전 제거를 권장합니다.",
+        "use_case": "정규분포에 가까운 데이터",
+        "keywords": ["standard", "scaling", "normalization", "z-score"]
+      },
+      {
+        "name": "minmax_scaling",
+        "description": "데이터를 0~1 범위로 선형 변환합니다. 균등한 스케일링이 필요하거나, 네트워크 기반 모델(예: 신경망)에서 활성화 함수 입력 범위를 제한할 때 유용합니다.",
+        "use_case": "균등분포 데이터 또는 범위 제한이 필요한 경우",
+        "keywords": ["minmax", "scaling", "0-1 range", "uniform"]
+      },
+      {
+        "name": "robust_scaling",
+        "description": "중앙값(median)과 IQR(사분위범위)을 사용하여 데이터를 스케일링합니다. 이상치의 영향을 덜 받으므로, 극단값이 있는 데이터에 적합합니다.",
+        "use_case": "이상치가 많은 데이터",
+        "keywords": ["robust", "scaling", "outliers", "median", "iqr"]
+      },
+      {
+        "name": "quantile_transform",
+        "description": "데이터를 균등분포 또는 정규분포로 사상(mapping)합니다. 이상치 영향을 줄이고 비모수적 정규화를 수행합니다.",
+        "use_case": "비정규분포 변수 정규화",
+        "keywords": ["quantile", "normalize", "nonparametric"]
+      }
+    ]
+  },
+  "feature_selection": {
+    "description": "특성 선택 관련 코드들",
+    "techniques": [
+      {
+        "name": "variance_threshold",
+        "description": "분산이 지정한 임계값(threshold) 이하인 특성을 제거합니다. 거의 변하지 않는 상수형 변수나 정보량이 부족한 변수를 정리하여 모델 복잡도를 줄입니다.",
+        "use_case": "중복되거나 의미없는 특성 제거",
+        "keywords": ["variance", "threshold", "feature selection", "low variance"]
+      },
+      {
+        "name": "correlation_filter",
+        "description": "특성 간 상관계수가 높은 쌍을 찾아 하나를 제거합니다. 다중공선성(multicollinearity)을 감소시켜 모델 안정성과 해석 가능성을 높입니다.",
+        "use_case": "다중공선성 제거",
+        "keywords": ["correlation", "multicollinearity", "feature selection", "redundant"]
+      },
+      {
+        "name": "recursive_feature_elimination",
+        "description": "모델(예: 랜덤 포레스트, 선형 회귀)의 중요도나 계수를 기준으로 재귀적으로 특성을 제거하며 최적의 특성 집합을 찾습니다. 상호작용 효과까지 고려할 수 있지만 연산 비용이 높습니다.",
+        "use_case": "특성 간 상호작용 효과 포착",
+        "keywords": ["recursive", "feature elimination", "feature selection", "interaction"]
+      }
+    ]
+  },
+  "feature_engineering": {
+    "description": "특성 엔지니어링 관련 코드들",
+    "techniques": [
+      {
+        "name": "polynomial_features",
+        "description": "기존 연속형 특성의 다항식 조합(제곱, 상호작용 항 등)을 생성하여 모델이 비선형 관계를 학습할 수 있게 합니다. 차원이 늘어나므로 주의해서 사용해야 합니다.",
+        "use_case": "변수 간 상호작용 효과 포착",
+        "keywords": ["polynomial", "interaction", "feature engineering", "cross terms"]
+      },
+      {
+        "name": "datetime_features",
+        "description": "날짜/시간(datetime) 컬럼에서 연도, 월, 일, 요일, 시간대 등 다양한 파생 특성을 추출합니다. 시계열 패턴이나 계절성 요인을 반영하는 데 유용합니다.",
+        "use_case": "시간적 패턴 포착",
+        "keywords": ["datetime", "temporal", "feature engineering", "time series"]
+      },
+      {
+        "name": "binning_features",
+        "description": "연속형 변수를 일정 구간(bin)으로 나누어 범주형 특성을 생성합니다. 값의 구간별 분포를 반영하며, 이상치의 영향을 완화할 때 사용합니다.",
+        "use_case": "연속형 변수의 범주화",
+        "keywords": ["binning", "discretization", "categorical", "intervals"]
+      },
+      {
+        "name": "feature_domain_interaction",
+        "description": "도메인 지식을 활용해 관련 특성 간 곱셈, 나눗셈, 차이 등의 상호작용 특성을 생성합니다. 도메인 특유의 관계를 모델에 반영할 때 효과적입니다.",
+        "use_case": "특성 간 도메인 상호작용 효과 포착",
+        "keywords": ["feature interaction", "feature engineering", "cross terms", "domain"]
+      },
+      {
+        "name": "cyclical_encoding",
+        "description": "요일, 월, 시간 등의 순환형 변수를 sin, cos 변환으로 표현하여 순환 특성을 보존합니다.",
+        "use_case": "시간·날짜 순환 정보",
+        "keywords": ["cyclical", "sin-cos", "time features"]
+      },
+      {
+        "name": "rare_category_grouping",
+        "description": "빈도가 낮은 범주를 ‘Other’ 그룹으로 통합하여 고유값 수를 줄이고 과적합 방지합니다.",
+        "use_case": "희소 범주 처리",
+        "keywords": ["rare grouping", "low frequency", "merge"]
+      }
+    ]
+  },
+  "dimensionality_reduction": {
+    "description": "차원 축소 관련 코드들",
+    "techniques": [
+      {
+        "name": "pca_reduction",
+        "description": "주성분분석(PCA)을 통해 선형 축소를 수행합니다. 데이터 분산을 최대한 보존하면서 차원을 감소시키며, 시각화용 2D/3D 임베딩에도 사용됩니다.",
+        "use_case": "선형 차원 축소",
+        "keywords": ["pca", "dimensionality reduction", "linear", "variance"]
+      },
+      {
+        "name": "tsne_reduction",
+        "description": "t-SNE를 사용해 고차원 데이터를 비선형 방식으로 2D/3D로 축소합니다. 시각화 목적이 주이며, 군집 구조를 직관적으로 파악할 수 있습니다.",
+        "use_case": "비선형 차원 축소",
+        "keywords": ["tsne", "dimensionality reduction", "nonlinear", "visualization"]
+      },
+      {
+        "name": "umap_reduction",
+        "description": "UMAP을 활용해 비선형 축소를 수행합니다. t-SNE보다 계산 속도가 빠르고 전역 구조도 잘 보존하는 특징이 있습니다.",
+        "use_case": "고성능 비선형 차원 축소",
+        "keywords": ["umap", "dimensionality reduction", "nonlinear", "fast"]
+      },
+      {
+        "name": "lda_reduction",
+        "description": "선형 판별 분석(LDA)을 통해 지도 학습 기반 차원 축소를 수행합니다. 클래스 간 분리를 최대화하는 방향으로 축소하여 분류 성능을 개선할 수 있습니다.",
+        "use_case": "지도 학습 기반 차원 축소",
+        "keywords": ["lda", "dimensionality reduction", "supervised", "classification"]
+      },
+      {
+        "name": "feature_agglomeration",
+        "description": "계층적 군집화를 이용해 비슷한 특성을 묶어 하나의 특성으로 합칩니다. 특성 수를 줄이면서 정보 손실을 최소화합니다.",
+        "use_case": "고차원 데이터 간소화",
+        "keywords": ["agglomeration", "clustering", "features"]
+      }
+    ]
+  },
+  "class_imbalance": {
+    "description": "클래스 불균형 처리 관련 코드들",
+    "techniques": [
+      {
+        "name": "smote_oversampling",
+        "description": "SMOTE(Synthetic Minority Over-sampling Technique)를 사용해 소수 클래스 주변에 새로운 합성 샘플을 생성합니다. 데이터 균형을 맞추어 분류 모델의 편향을 줄여줍니다.",
+        "use_case": "소수 클래스 오버샘플링",
+        "keywords": ["smote", "oversampling", "imbalance", "synthetic"]
+      },
+      {
+        "name": "adasyn_oversampling",
+        "description": "ADASYN(Adaptive Synthetic Sampling)을 통해 소수 클래스의 어려운 샘플 주변에 합성 데이터를 생성합니다. SMOTE보다 적응적으로 샘플을 더 집중 생성합니다.",
+        "use_case": "적응적 소수 클래스 오버샘플링",
+        "keywords": ["adasyn", "oversampling", "imbalance", "adaptive"]
+      },
+      {
+        "name": "random_undersampling",
+        "description": "다수 클래스에서 임의로 샘플을 제거하여 클래스 균형을 맞춥니다. 단순하지만 데이터 손실이 발생하므로 주의해서 사용해야 합니다.",
+        "use_case": "다수 클래스 언더샘플링",
+        "keywords": ["undersampling", "imbalance", "random", "majority"]
+      },
+      {
+        "name": "class_weights",
+        "description": "모델 학습 시 클래스 가중치를 자동 계산하여 소수 클래스에 더 큰 페널티를 부여합니다. 데이터 변경 없이도 불균형을 보정할 수 있습니다.",
+        "use_case": "모델 학습 시 클래스 가중치 적용",
+        "keywords": ["class weights", "imbalance", "balanced", "training"]
+      }
+    ]
+  }
+} 

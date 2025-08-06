@@ -1,387 +1,492 @@
+#!/usr/bin/env python3
 """
 Planning Agent
-EDA 결과를 분석하여 전처리 작업 계획을 수립하는 에이전트입니다.
+
+EDA 결과를 분석하여 전처리 계획을 수립하는 에이전트
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Optional
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableLambda
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass
+
+
+@dataclass
+class EDAResults:
+    """EDA 결과를 위한 데이터클래스"""
+    numeric_analysis: Dict[str, Any]
+    category_analysis: Dict[str, Any]
+    null_analysis: Dict[str, Any]
+    correlation_analysis: Dict[str, Any]
+    outlier_analysis: Dict[str, Any]
+    generated_plots: List[str]
 
 
 class PlanningAgent:
-    """
-    Planning Agent
-    EDA 결과를 분석하여 전처리 작업의 우선순위와 순서를 결정합니다.
-    """
+    """전처리 계획 수립 에이전트"""
     
     def __init__(self):
-        """Planning Agent 초기화"""
-        self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.1,
-            max_tokens=1500
-        )
-        
-        # 전처리 작업 카테고리 정의
-        self.preprocessing_categories = {
-            'missing_values': {
-                'description': '결측값 처리',
-                'priority': 1,
-                'dependencies': [],
-                'keywords': ['missing', 'null', 'nan', '결측']
+        # 에이전트별 담당 작업 정의
+        self.agent_responsibilities = {
+            'nulldata': {
+                'tasks': ['missing_values', 'imputation'],
+                'keywords': ['결측값', 'missing', 'null', 'nan', 'imputation']
             },
-            'outliers': {
-                'description': '이상치 처리',
-                'priority': 2,
-                'dependencies': ['missing_values'],
-                'keywords': ['outlier', '이상치', 'extreme', 'iqr', 'zscore']
+            'outlier': {
+                'tasks': ['outlier_detection', 'outlier_removal'],
+                'keywords': ['이상치', 'outlier', 'anomaly', 'extreme']
             },
-            'duplicates': {
-                'description': '중복 데이터 처리',
-                'priority': 1,
-                'dependencies': [],
-                'keywords': ['duplicate', '중복', 'repeated']
-            },
-            'categorical_encoding': {
-                'description': '범주형 변수 인코딩',
-                'priority': 3,
-                'dependencies': ['missing_values'],
-                'keywords': ['categorical', '범주형', 'object', 'string', 'encoding']
+            'category_encoding': {
+                'tasks': ['categorical_encoding', 'label_encoding', 'onehot_encoding'],
+                'keywords': ['범주형', 'categorical', 'encoding', 'label', 'onehot']
             },
             'scaling': {
-                'description': '특성 스케일링',
-                'priority': 4,
-                'dependencies': ['missing_values', 'outliers'],
-                'keywords': ['scaling', 'normalization', '스케일링', '정규화']
+                'tasks': ['normalization', 'standardization', 'scaling'],
+                'keywords': ['스케일링', 'scaling', 'normalization', 'standardization']
+            },
+            'duplicated': {
+                'tasks': ['duplicate_removal'],
+                'keywords': ['중복', 'duplicate', 'redundant']
             },
             'feature_selection': {
-                'description': '특성 선택',
-                'priority': 5,
-                'dependencies': ['missing_values', 'categorical_encoding'],
-                'keywords': ['feature selection', '특성 선택', 'variance', 'correlation']
+                'tasks': ['feature_selection', 'dimensionality_reduction'],
+                'keywords': ['특성선택', 'feature_selection', 'dimension_reduction']
             },
             'feature_engineering': {
-                'description': '특성 엔지니어링',
-                'priority': 6,
-                'dependencies': ['missing_values', 'categorical_encoding'],
-                'keywords': ['feature engineering', '특성 엔지니어링', 'polynomial', 'interaction']
+                'tasks': ['feature_creation', 'feature_transformation'],
+                'keywords': ['특성생성', 'feature_engineering', 'feature_creation']
             },
-            'dimensionality_reduction': {
-                'description': '차원 축소',
-                'priority': 7,
-                'dependencies': ['feature_selection', 'feature_engineering'],
-                'keywords': ['dimensionality reduction', '차원 축소', 'pca', 'tsne']
+            'dimension_reduction': {
+                'tasks': ['pca', 'dimensionality_reduction'],
+                'keywords': ['차원축소', 'pca', 'dimension_reduction', 'tsne']
             },
-            'class_imbalance': {
-                'description': '클래스 불균형 처리',
-                'priority': 8,
-                'dependencies': ['missing_values', 'categorical_encoding'],
-                'keywords': ['imbalance', '불균형', 'smote', 'undersampling']
+            'imbalance': {
+                'tasks': ['class_imbalance', 'oversampling', 'undersampling'],
+                'keywords': ['불균형', 'imbalance', 'oversampling', 'undersampling']
             }
         }
-        
-        print("Planning Agent 초기화 완료")
     
-    def analyze_eda_results(self, eda_results: Dict[str, Any]) -> Dict[str, Any]:
-        """EDA 결과를 분석하여 전처리 필요성을 판단"""
+    def create_preprocessing_plan(self, df: pd.DataFrame, eda_results: EDAResults, 
+                                target_column: str = None) -> Dict[str, Any]:
+        """
+        EDA 결과를 기반으로 전처리 계획 수립
         
-        analysis = {
-            'missing_values_needed': False,
-            'outliers_needed': False,
-            'duplicates_needed': False,
-            'categorical_encoding_needed': False,
-            'scaling_needed': False,
-            'feature_selection_needed': False,
-            'feature_engineering_needed': False,
-            'dimensionality_reduction_needed': False,
-            'class_imbalance_needed': False,
-            'data_characteristics': {},
-            'recommendations': []
-        }
-        
-        # 결측값 분석
-        null_analysis = eda_results.get('null_analysis_text', '')
-        if 'missing' in null_analysis.lower() or 'null' in null_analysis.lower():
-            analysis['missing_values_needed'] = True
-            analysis['recommendations'].append('결측값 처리가 필요합니다.')
-        
-        # 이상치 분석
-        outlier_analysis = eda_results.get('outlier_analysis_text', '')
-        if 'outlier' in outlier_analysis.lower() or '이상치' in outlier_analysis:
-            analysis['outliers_needed'] = True
-            analysis['recommendations'].append('이상치 처리가 필요합니다.')
-        
-        # 범주형 변수 분석
-        cate_analysis = eda_results.get('cate_analysis_text', '')
-        if 'categorical' in cate_analysis.lower() or '범주형' in cate_analysis:
-            analysis['categorical_encoding_needed'] = True
-            analysis['recommendations'].append('범주형 변수 인코딩이 필요합니다.')
-        
-        # 수치형 변수 분석
-        numeric_analysis = eda_results.get('numeric_analysis_text', '')
-        if 'scaling' in numeric_analysis.lower() or '스케일링' in numeric_analysis:
-            analysis['scaling_needed'] = True
-            analysis['recommendations'].append('특성 스케일링이 필요합니다.')
-        
-        # 상관관계 분석
-        corr_analysis = eda_results.get('corr_analysis_text', '')
-        if 'correlation' in corr_analysis.lower() or '상관관계' in corr_analysis:
-            analysis['feature_selection_needed'] = True
-            analysis['recommendations'].append('특성 선택이 필요합니다.')
-        
-        # 전체 데이터 분석
-        text_analysis = eda_results.get('text_analysis', '')
-        
-        # 데이터 크기 및 특성 분석
-        if 'large' in text_analysis.lower() or 'many features' in text_analysis.lower():
-            analysis['dimensionality_reduction_needed'] = True
-            analysis['recommendations'].append('차원 축소가 필요합니다.')
-        
-        if 'imbalance' in text_analysis.lower() or '불균형' in text_analysis:
-            analysis['class_imbalance_needed'] = True
-            analysis['recommendations'].append('클래스 불균형 처리가 필요합니다.')
-        
-        return analysis
-    
-    def create_preprocessing_plan(self, eda_analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """전처리 계획 수립"""
-        
-        # 필요한 작업들 식별
-        needed_tasks = []
-        for task, needed in eda_analysis.items():
-            if needed and task.endswith('_needed'):
-                task_name = task.replace('_needed', '')
-                needed_tasks.append(task_name)
-        
-        # 우선순위에 따른 작업 순서 결정
-        prioritized_tasks = self.prioritize_tasks(needed_tasks)
-        
-        # 의존성 검사 및 순서 조정
-        final_order = self.check_dependencies(prioritized_tasks)
-        
-        # 계획 생성
-        plan = {
-            'tasks': final_order,
-            'priority': final_order,
-            'rationale': self.generate_rationale(eda_analysis, final_order),
-            'estimated_steps': len(final_order),
-            'complexity': self.assess_complexity(final_order),
-            'time_estimate': self.estimate_time(final_order)
-        }
-        
-        return plan
-    
-    def prioritize_tasks(self, tasks: List[str]) -> List[str]:
-        """작업 우선순위 결정"""
-        if not tasks:
-            return ['missing_values', 'categorical_encoding', 'scaling']
-        
-        # 우선순위 점수 계산
-        task_scores = []
-        for task in tasks:
-            if task in self.preprocessing_categories:
-                score = self.preprocessing_categories[task]['priority']
-                task_scores.append((task, score))
-        
-        # 우선순위 순으로 정렬
-        task_scores.sort(key=lambda x: x[1])
-        return [task for task, score in task_scores]
-    
-    def check_dependencies(self, tasks: List[str]) -> List[str]:
-        """의존성 검사 및 순서 조정"""
-        final_order = []
-        added_tasks = set()
-        
-        for task in tasks:
-            if task in self.preprocessing_categories:
-                dependencies = self.preprocessing_categories[task]['dependencies']
-                
-                # 의존성 작업들을 먼저 추가
-                for dep in dependencies:
-                    if dep not in added_tasks and dep in tasks:
-                        if dep not in final_order:
-                            final_order.append(dep)
-                            added_tasks.add(dep)
-                
-                # 현재 작업 추가
-                if task not in added_tasks:
-                    final_order.append(task)
-                    added_tasks.add(task)
-        
-        return final_order
-    
-    def generate_rationale(self, eda_analysis: Dict[str, Any], tasks: List[str]) -> str:
-        """계획에 대한 근거 생성"""
-        rationale_parts = []
-        
-        if 'missing_values' in tasks:
-            rationale_parts.append("결측값을 먼저 처리하여 데이터 품질을 확보")
-        
-        if 'outliers' in tasks:
-            rationale_parts.append("이상치를 처리하여 모델 성능에 영향을 주는 극값들을 제거")
-        
-        if 'categorical_encoding' in tasks:
-            rationale_parts.append("범주형 변수를 수치형으로 변환하여 머신러닝 모델이 처리할 수 있도록 함")
-        
-        if 'scaling' in tasks:
-            rationale_parts.append("특성 스케일링을 통해 모든 변수가 동일한 스케일을 가지도록 정규화")
-        
-        if 'feature_selection' in tasks:
-            rationale_parts.append("불필요한 특성을 제거하여 모델 복잡도를 줄이고 성능을 향상")
-        
-        if 'feature_engineering' in tasks:
-            rationale_parts.append("새로운 특성을 생성하여 모델의 예측 능력을 향상")
-        
-        if 'dimensionality_reduction' in tasks:
-            rationale_parts.append("차원을 축소하여 계산 효율성을 높이고 차원의 저주 문제 해결")
-        
-        if 'class_imbalance' in tasks:
-            rationale_parts.append("클래스 불균형을 해결하여 모델이 모든 클래스를 균등하게 학습하도록 함")
-        
-        return ". ".join(rationale_parts) if rationale_parts else "표준 전처리 파이프라인 적용"
-    
-    def assess_complexity(self, tasks: List[str]) -> str:
-        """작업 복잡도 평가"""
-        if len(tasks) <= 3:
-            return "Low"
-        elif len(tasks) <= 5:
-            return "Medium"
-        else:
-            return "High"
-    
-    def estimate_time(self, tasks: List[str]) -> str:
-        """예상 소요 시간 추정"""
-        base_time = len(tasks) * 2  # 기본 2분/작업
-        if len(tasks) <= 3:
-            return f"{base_time}분 (간단한 전처리)"
-        elif len(tasks) <= 5:
-            return f"{base_time}분 (중간 복잡도 전처리)"
-        else:
-            return f"{base_time}분 (복잡한 전처리)"
-    
-    def generate_planning_prompt(self, eda_results: Dict[str, Any]) -> str:
-        """Planning을 위한 LLM 프롬프트 생성"""
-        
-        prompt = f"""
-You are a data preprocessing planning expert. Analyze the EDA results and create a comprehensive preprocessing plan.
-
-=== EDA Analysis Results ===
-Text Analysis: {eda_results.get('text_analysis', '')}
-Missing Value Analysis: {eda_results.get('null_analysis_text', '')}
-Outlier Analysis: {eda_results.get('outlier_analysis_text', '')}
-Categorical Analysis: {eda_results.get('cate_analysis_text', '')}
-Numeric Analysis: {eda_results.get('numeric_analysis_text', '')}
-Correlation Analysis: {eda_results.get('corr_analysis_text', '')}
-
-=== Available Preprocessing Tasks ===
-1. missing_values - Handle missing data
-2. outliers - Detect and handle outliers
-3. duplicates - Remove duplicate rows
-4. categorical_encoding - Encode categorical variables
-5. scaling - Scale numerical features
-6. feature_selection - Select important features
-7. feature_engineering - Create new features
-8. dimensionality_reduction - Reduce dimensions
-9. class_imbalance - Handle class imbalance
-
-=== Requirements ===
-1. Analyze the EDA results to identify which preprocessing tasks are needed
-2. Consider the logical order of preprocessing steps
-3. Prioritize tasks based on data quality issues
-4. Consider dependencies between tasks
-5. Provide rationale for the chosen order
-
-Please provide a JSON response with the following structure:
-{{
-    "tasks": ["task1", "task2", ...],
-    "priority": ["task1", "task2", ...],
-    "rationale": "explanation of the plan",
-    "complexity": "Low/Medium/High",
-    "estimated_time": "time estimate"
-}}
-"""
-        return prompt
-    
-    def create_plan_with_llm(self, eda_results: Dict[str, Any]) -> Dict[str, Any]:
-        """LLM을 사용하여 전처리 계획 생성"""
-        
-        try:
-            prompt = self.generate_planning_prompt(eda_results)
-            response = self.llm.invoke([HumanMessage(content=prompt)])
+        Args:
+            df: 입력 데이터프레임
+            eda_results: EDA 분석 결과
+            target_column: 타겟 컬럼명
             
-            # JSON 응답 파싱 시도
-            import json
-            try:
-                plan = json.loads(response.content)
-                return plan
-            except json.JSONDecodeError:
-                # JSON 파싱 실패 시 기본 계획 사용
-                print("LLM 응답을 JSON으로 파싱할 수 없어 기본 계획을 사용합니다.")
-                return self.create_basic_plan(eda_results)
+        Returns:
+            Dict: 전처리 계획
+        """
+        plans = []
         
-        except Exception as e:
-            print(f"LLM 계획 생성 오류: {e}")
-            return self.create_basic_plan(eda_results)
+        # 1. 결측값 처리 계획
+        missing_plan = self._plan_missing_values(df, eda_results)
+        if missing_plan:
+            plans.append(missing_plan)
+        
+        # 2. 중복값 처리 계획
+        duplicate_plan = self._plan_duplicate_removal(df)
+        if duplicate_plan:
+            plans.append(duplicate_plan)
+        
+        # 3. 이상치 처리 계획
+        outlier_plan = self._plan_outlier_handling(df, eda_results)
+        if outlier_plan:
+            plans.append(outlier_plan)
+        
+        # 4. 범주형 인코딩 계획
+        encoding_plan = self._plan_categorical_encoding(df, eda_results)
+        if encoding_plan:
+            plans.append(encoding_plan)
+        
+        # 5. 스케일링 계획
+        scaling_plan = self._plan_scaling(df, eda_results)
+        if scaling_plan:
+            plans.append(scaling_plan)
+        
+        # 6. 특성 선택 계획
+        feature_selection_plan = self._plan_feature_selection(df, eda_results)
+        if feature_selection_plan:
+            plans.append(feature_selection_plan)
+        
+        # 7. 특성 엔지니어링 계획
+        feature_engineering_plan = self._plan_feature_engineering(df, eda_results)
+        if feature_engineering_plan:
+            plans.append(feature_engineering_plan)
+        
+        # 8. 차원 축소 계획
+        dimension_reduction_plan = self._plan_dimension_reduction(df, eda_results)
+        if dimension_reduction_plan:
+            plans.append(dimension_reduction_plan)
+        
+        # 9. 클래스 불균형 처리 계획
+        if target_column:
+            imbalance_plan = self._plan_class_imbalance(df, target_column)
+            if imbalance_plan:
+                plans.append(imbalance_plan)
+        
+        return {
+            'plans': plans,
+            'total_steps': len(plans),
+            'estimated_time': self._estimate_processing_time(plans),
+            'data_shape': df.shape,
+            'target_column': target_column
+        }
     
-    def create_basic_plan(self, eda_results: Dict[str, Any]) -> Dict[str, Any]:
-        """기본 전처리 계획 생성"""
-        analysis = self.analyze_eda_results(eda_results)
-        plan = self.create_preprocessing_plan(analysis)
-        return plan
-
-
-def planning_agent_function(inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Planning Agent 함수
-    EDA 결과를 분석하여 전처리 계획을 수립합니다.
-    """
-    try:
-        # Planning Agent 인스턴스 생성
-        planning_agent = PlanningAgent()
+    def _plan_missing_values(self, df: pd.DataFrame, eda_results: EDAResults) -> Optional[Dict[str, Any]]:
+        """결측값 처리 계획 수립"""
+        missing_count = df.isnull().sum().sum()
+        if missing_count == 0:
+            return None
         
-        # EDA 결과 추출
-        eda_results = {
-            'text_analysis': inputs.get('text_analysis', ''),
-            'null_analysis_text': inputs.get('null_analysis_text', ''),
-            'outlier_analysis_text': inputs.get('outlier_analysis_text', ''),
-            'cate_analysis_text': inputs.get('cate_analysis_text', ''),
-            'numeric_analysis_text': inputs.get('numeric_analysis_text', ''),
-            'corr_analysis_text': inputs.get('corr_analysis_text', ''),
-        }
+        missing_ratio = missing_count / (df.shape[0] * df.shape[1])
         
-        # LLM을 사용한 계획 생성
-        planning_info = planning_agent.create_plan_with_llm(eda_results)
+        # 결측값 패턴 분석
+        techniques = []
+        rationale = f"총 {missing_count}개의 결측값 발견 (전체 데이터의 {missing_ratio:.2%})"
         
-        print(f"Planning Agent: 전처리 계획 수립 완료")
-        print(f"  작업 목록: {planning_info.get('tasks', [])}")
-        print(f"  우선순위: {planning_info.get('priority', [])}")
-        print(f"  복잡도: {planning_info.get('complexity', 'Unknown')}")
+        # 컬럼별 결측값 비율 확인
+        missing_by_column = df.isnull().sum() / len(df)
+        high_missing_columns = missing_by_column[missing_by_column > 0.5]
         
-        return {
-            **inputs,
-            'planning_info': planning_info
-        }
+        if len(high_missing_columns) > 0:
+            techniques.append('drop_high_missing_columns')
+            rationale += f". {len(high_missing_columns)}개 컬럼에서 50% 이상 결측값"
         
-    except Exception as e:
-        print(f"Planning Agent 오류: {e}")
-        # 기본 계획 반환
-        default_plan = {
-            'tasks': ['missing_values', 'outliers', 'categorical_encoding', 'scaling'],
-            'priority': ['missing_values', 'outliers', 'categorical_encoding', 'scaling'],
-            'rationale': '기본 전처리 파이프라인',
-            'complexity': 'Medium',
-            'estimated_time': '8분'
-        }
+        # 수치형 변수 결측값 처리
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        numeric_missing = df[numeric_cols].isnull().sum().sum()
+        if numeric_missing > 0:
+            techniques.extend(['fill_numerical_median', 'advanced_imputation'])
+            rationale += f". 수치형 변수에서 {numeric_missing}개 결측값"
+        
+        # 범주형 변수 결측값 처리
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+        categorical_missing = df[categorical_cols].isnull().sum().sum()
+        if categorical_missing > 0:
+            techniques.append('fill_categorical_mode')
+            rationale += f". 범주형 변수에서 {categorical_missing}개 결측값"
         
         return {
-            **inputs,
-            'planning_info': default_plan,
-            'error': str(e)
+            'agent': 'nulldata',
+            'techniques': techniques,
+            'priority': 1,  # 가장 높은 우선순위
+            'rationale': rationale,
+            'estimated_impact': 'high'
         }
+    
+    def _plan_duplicate_removal(self, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """중복값 제거 계획 수립"""
+        duplicate_count = df.duplicated().sum()
+        if duplicate_count == 0:
+            return None
+        
+        duplicate_ratio = duplicate_count / len(df)
+        
+        return {
+            'agent': 'duplicated',
+            'techniques': ['remove_duplicates'],
+            'priority': 2,
+            'rationale': f"{duplicate_count}개의 중복 행 발견 (전체의 {duplicate_ratio:.2%})",
+            'estimated_impact': 'medium'
+        }
+    
+    def _plan_outlier_handling(self, df: pd.DataFrame, eda_results: EDAResults) -> Optional[Dict[str, Any]]:
+        """이상치 처리 계획 수립"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) == 0:
+            return None
+        
+        # 간단한 이상치 탐지 (IQR 방법)
+        outlier_counts = {}
+        total_outliers = 0
+        
+        for col in numeric_cols:
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            
+            outliers = ((df[col] < lower_bound) | (df[col] > upper_bound)).sum()
+            if outliers > 0:
+                outlier_counts[col] = outliers
+                total_outliers += outliers
+        
+        if total_outliers == 0:
+            return None
+        
+        techniques = ['iqr_outlier_detection']
+        rationale = f"{total_outliers}개의 이상치 발견"
+        
+        # 이상치 비율에 따라 처리 방법 결정
+        outlier_ratio = total_outliers / (len(df) * len(numeric_cols))
+        if outlier_ratio > 0.1:
+            techniques.extend(['zscore_outlier_detection', 'isolation_forest_outliers'])
+            rationale += " (높은 비율로 인해 다중 방법 적용 권장)"
+        
+        return {
+            'agent': 'outlier',
+            'techniques': techniques,
+            'priority': 3,
+            'rationale': rationale,
+            'estimated_impact': 'medium'
+        }
+    
+    def _plan_categorical_encoding(self, df: pd.DataFrame, eda_results: EDAResults) -> Optional[Dict[str, Any]]:
+        """범주형 인코딩 계획 수립"""
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+        if len(categorical_cols) == 0:
+            return None
+        
+        techniques = []
+        rationale = f"{len(categorical_cols)}개의 범주형 변수 발견"
+        
+        # 카디널리티에 따른 인코딩 전략
+        low_cardinality_cols = []
+        medium_cardinality_cols = []
+        high_cardinality_cols = []
+        
+        for col in categorical_cols:
+            unique_count = df[col].nunique()
+            if unique_count <= 10:
+                low_cardinality_cols.append(col)
+            elif unique_count <= 20:
+                medium_cardinality_cols.append(col)
+            else:
+                high_cardinality_cols.append(col)
+        
+        if low_cardinality_cols:
+            techniques.append('label_encoding')
+            rationale += f". {len(low_cardinality_cols)}개 저카디널리티"
+        
+        if medium_cardinality_cols:
+            techniques.append('onehot_encoding')
+            rationale += f". {len(medium_cardinality_cols)}개 중카디널리티"
+        
+        if high_cardinality_cols:
+            techniques.append('frequency_encoding')
+            rationale += f". {len(high_cardinality_cols)}개 고카디널리티"
+        
+        return {
+            'agent': 'category_encoding',
+            'techniques': techniques,
+            'priority': 4,
+            'rationale': rationale,
+            'estimated_impact': 'high'
+        }
+    
+    def _plan_scaling(self, df: pd.DataFrame, eda_results: EDAResults) -> Optional[Dict[str, Any]]:
+        """스케일링 계획 수립"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) <= 1:
+            return None
+        
+        # 변수들의 스케일 차이 확인
+        scales = df[numeric_cols].std()
+        max_scale = scales.max()
+        min_scale = scales.min()
+        
+        if max_scale / min_scale < 10:  # 스케일 차이가 크지 않음
+            return None
+        
+        techniques = ['standard_scaling']
+        rationale = f"{len(numeric_cols)}개 수치형 변수의 스케일 차이 발견 (최대/최소 비율: {max_scale/min_scale:.1f})"
+        
+        # 이상치가 많으면 Robust Scaling 추천
+        if 'outlier' in str(eda_results.outlier_analysis):
+            techniques.append('robust_scaling')
+            rationale += ". 이상치로 인해 Robust Scaling 추가 권장"
+        
+        # 범위 제한이 필요한 경우 MinMax Scaling 추천
+        techniques.append('minmax_scaling')
+        
+        return {
+            'agent': 'scaling',
+            'techniques': techniques,
+            'priority': 5,
+            'rationale': rationale,
+            'estimated_impact': 'medium'
+        }
+    
+    def _plan_feature_selection(self, df: pd.DataFrame, eda_results: EDAResults) -> Optional[Dict[str, Any]]:
+        """특성 선택 계획 수립"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        
+        # 변수가 너무 많은 경우에만 특성 선택 수행
+        if len(df.columns) < 20:
+            return None
+        
+        techniques = ['variance_threshold']
+        rationale = f"총 {len(df.columns)}개 변수로 특성 선택 필요"
+        
+        if len(numeric_cols) > 5:
+            techniques.append('correlation_filter')
+            rationale += ". 다중공선성 제거 권장"
+        
+        return {
+            'agent': 'feature_selection',
+            'techniques': techniques,
+            'priority': 6,
+            'rationale': rationale,
+            'estimated_impact': 'low'
+        }
+    
+    def _plan_feature_engineering(self, df: pd.DataFrame, eda_results: EDAResults) -> Optional[Dict[str, Any]]:
+        """특성 엔지니어링 계획 수립"""
+        techniques = []
+        rationale = "특성 엔지니어링 기회 탐색"
+        
+        # 날짜/시간 컬럼 확인
+        datetime_candidates = []
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                # 샘플 값들을 확인하여 날짜 형식인지 판단
+                sample_values = df[col].dropna().head(10).astype(str)
+                if any('/' in str(val) or '-' in str(val) for val in sample_values):
+                    datetime_candidates.append(col)
+        
+        if datetime_candidates:
+            techniques.append('datetime_features')
+            rationale += f". {len(datetime_candidates)}개 날짜 컬럼 발견"
+        
+        # 수치형 변수가 충분한 경우 상호작용 특성 생성
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) >= 3:
+            techniques.append('polynomial_features')
+            rationale += f". {len(numeric_cols)}개 수치형 변수로 상호작용 특성 생성 가능"
+        
+        # 연속형 변수의 구간화
+        if len(numeric_cols) > 0:
+            techniques.append('binning_features')
+            rationale += ". 수치형 변수 구간화 적용"
+        
+        if not techniques:
+            return None
+        
+        return {
+            'agent': 'feature_engineering',
+            'techniques': techniques,
+            'priority': 7,
+            'rationale': rationale,
+            'estimated_impact': 'medium'
+        }
+    
+    def _plan_dimension_reduction(self, df: pd.DataFrame, eda_results: EDAResults) -> Optional[Dict[str, Any]]:
+        """차원 축소 계획 수립"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        
+        # 변수가 충분히 많고 데이터가 충분한 경우에만 수행
+        if len(numeric_cols) < 10 or len(df) < 100:
+            return None
+        
+        techniques = ['pca_reduction']
+        rationale = f"{len(numeric_cols)}개 수치형 변수로 차원 축소 고려"
+        
+        # 데이터 크기에 따라 추가 기법 결정
+        if len(df) > 1000:
+            techniques.extend(['tsne_reduction', 'umap_reduction'])
+            rationale += ". 충분한 데이터로 비선형 차원축소 적용 가능"
+        
+        return {
+            'agent': 'dimension_reduction',
+            'techniques': techniques,
+            'priority': 8,
+            'rationale': rationale,
+            'estimated_impact': 'low'
+        }
+    
+    def _plan_class_imbalance(self, df: pd.DataFrame, target_column: str) -> Optional[Dict[str, Any]]:
+        """클래스 불균형 처리 계획 수립"""
+        if target_column not in df.columns:
+            return None
+        
+        # 타겟 변수의 분포 확인
+        target_counts = df[target_column].value_counts()
+        if len(target_counts) < 2:
+            return None
+        
+        # 불균형 비율 계산
+        majority_class_ratio = target_counts.max() / len(df)
+        minority_class_ratio = target_counts.min() / len(df)
+        imbalance_ratio = majority_class_ratio / minority_class_ratio
+        
+        # 불균형이 심하지 않으면 처리하지 않음
+        if imbalance_ratio < 2:
+            return None
+        
+        techniques = ['class_weights']
+        rationale = f"클래스 불균형 발견 (비율: {imbalance_ratio:.1f}:1)"
+        
+        # 불균형 정도에 따라 추가 기법 결정
+        if imbalance_ratio > 5:
+            techniques.extend(['smote_oversampling', 'random_undersampling'])
+            rationale += ". 심한 불균형으로 리샘플링 권장"
+        
+        return {
+            'agent': 'imbalance',
+            'techniques': techniques,
+            'priority': 9,
+            'rationale': rationale,
+            'estimated_impact': 'high'
+        }
+    
+    def _estimate_processing_time(self, plans: List[Dict[str, Any]]) -> str:
+        """처리 시간 추정"""
+        total_steps = len(plans)
+        if total_steps <= 3:
+            return "빠름 (< 1분)"
+        elif total_steps <= 6:
+            return "보통 (1-3분)"
+        else:
+            return "느림 (> 3분)"
 
 
-# LangGraph 노드로 사용할 수 있는 함수
-planning_agent = RunnableLambda(planning_agent_function)
+def main():
+    """테스트 함수"""
+    # 샘플 데이터 생성
+    np.random.seed(42)
+    
+    data = {
+        'age': [25, 30, np.nan, 35, 40, np.nan, 45, 50, 55, 60] * 10,
+        'salary': [50000, 60000, 55000, np.nan, 70000, 65000, np.nan, 80000, 85000, 90000] * 10,
+        'department': ['IT', 'HR', 'IT', 'Finance', np.nan, 'IT', 'HR', 'Finance', 'IT', 'HR'] * 10,
+        'experience': list(range(100)),
+        'target': [0, 1, 0, 1, 1, 0, 1, 1, 1, 0] * 10
+    }
+    
+    df = pd.DataFrame(data)
+    
+    # 임시 EDA 결과 생성
+    eda_results = EDAResults(
+        numeric_analysis={'summary': 'numeric analysis done'},
+        category_analysis={'summary': 'category analysis done'},
+        null_analysis={'summary': 'null analysis done'},
+        correlation_analysis={'summary': 'correlation analysis done'},
+        outlier_analysis={'summary': 'outlier analysis done'},
+        generated_plots=['plot1.png', 'plot2.png']
+    )
+    
+    # Planning Agent 테스트
+    planning_agent = PlanningAgent()
+    plan = planning_agent.create_preprocessing_plan(df, eda_results, target_column='target')
+    
+    print("=== 전처리 계획 ===")
+    print(f"총 {plan['total_steps']}개 단계")
+    print(f"예상 처리 시간: {plan['estimated_time']}")
+    print(f"데이터 형태: {plan['data_shape']}")
+    print()
+    
+    for plan_item in plan['plans']:
+        print(f"에이전트: {plan_item['agent']}")
+        print(f"우선순위: {plan_item['priority']}")
+        print(f"기법들: {plan_item['techniques']}")
+        print(f"근거: {plan_item['rationale']}")
+        print(f"예상 영향: {plan_item['estimated_impact']}")
+        print("-" * 50)
+
+
+if __name__ == "__main__":
+    main()

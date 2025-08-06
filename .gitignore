@@ -59,11 +59,19 @@ generated_plots/
 *.gif
 *.pdf
 
+# Auto-generated preprocessing pipelines
+generated_preprocessing_pipeline.py
+*_pipeline.py
+
 # Data files
 *.csv
 *.xlsx
 *.xls
 *.json
+
+# But include important config files
+!KB_rag_agents/knowledge_base/preprocessing_codes.json
+!requirements.txt
 
 # Logs
 *.log
