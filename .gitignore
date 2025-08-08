@@ -91,3 +91,4 @@ htmlcov/
 dmypy.json 
 
 references/
+datasets/

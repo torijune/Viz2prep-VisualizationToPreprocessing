@@ -1,6 +1,6 @@
 """
-스케일링 전처리 에이전트
-수치형 변수의 스케일을 조정하는 다양한 정규화 방법을 제공합니다.
+수치형 변수 스케일링 전처리 에이전트
+수치형 변수를 다양한 방법으로 스케일링합니다.
 """
 
 import pandas as pd
@@ -11,245 +11,281 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 
-def scale_features(inputs: Dict[str, Any]) -> Dict[str, Any]:
+def handle_scaling(inputs: Dict[str, Any]) -> Dict[str, Any]:
     """
-    수치형 변수의 스케일을 조정하는 전처리 함수
+    수치형 변수를 스케일링하는 전처리 에이전트입니다.
     
     Args:
-        inputs: DataFrame과 스케일링 방법이 포함된 입력 딕셔너리
+        inputs: X, Y DataFrame과 EDA 결과가 포함된 입력 딕셔너리
         
     Returns:
-        스케일링된 DataFrame이 포함된 딕셔너리
+        전처리된 X, Y DataFrame과 코드가 포함된 딕셔너리
     """
-    df = inputs["dataframe"].copy()
-    method = inputs.get("scaling_method", "auto")  # auto, standard, minmax, robust, normalize
-    columns = inputs.get("scaling_columns", None)  # 특정 컬럼만 스케일링
+    print("🔧 [PREPROCESSING] 수치형 변수 스케일링 시작...")
     
-    # EDA 결과물들 가져오기
-    numeric_analysis_text = inputs.get("numeric_analysis_text", "")
-    numeric_image_paths = inputs.get("numeric_image_paths", [])
-    outlier_analysis_text = inputs.get("outlier_analysis_text", "")
-    text_analysis = inputs.get("text_analysis", "")
+    X = inputs["X"]
+    Y = inputs["Y"]
+    eda_results = inputs.get("eda_results", {})
     
-    # 수치형 컬럼 선택
-    if columns is None:
-        numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
-    else:
-        numeric_columns = [col for col in columns if col in df.columns and df[col].dtype in [np.number]]
+    # X와 Y의 수치형 컬럼 찾기
+    X_numeric_columns = X.select_dtypes(include=[np.number]).columns.tolist()
+    Y_numeric_columns = Y.select_dtypes(include=[np.number]).columns.tolist()
     
-    if not numeric_columns:
-        print("스케일링: 수치형 변수가 없습니다.")
+    if not X_numeric_columns and not Y_numeric_columns:
+        print("✅ [PREPROCESSING] 수치형 변수가 없습니다.")
         return {
             **inputs,
-            "dataframe": df,
-            "scaling_info": {}
+            "preprocessing_code": "# 수치형 변수가 없으므로 스케일링 불필요",
+            "preprocessing_summary": "수치형 변수 없음"
         }
     
-    print(f"스케일링 시작: {method} 방법")
-    print(f"  대상 컬럼: {numeric_columns}")
+    print(f"📊 [PREPROCESSING] X 수치형 변수: {X_numeric_columns}")
+    print(f"📊 [PREPROCESSING] Y 수치형 변수: {Y_numeric_columns}")
     
-    # MultiModal LLM을 사용한 전처리 코드 생성
-    if method == "auto":
-        preprocessing_code = generate_scaling_code_with_llm(
-            df, numeric_columns, numeric_analysis_text, numeric_image_paths,
-            outlier_analysis_text, text_analysis
-        )
+    # 스케일링 전략 결정
+    X_scaling_steps = []
+    Y_scaling_steps = []
+    
+    # X 수치형 변수 처리 (특성 변수는 스케일링 필요)
+    for col in X_numeric_columns:
+        # 분산과 범위를 확인하여 스케일링 방법 결정
+        std_dev = X[col].std()
+        value_range = X[col].max() - X[col].min()
         
-        # 생성된 코드 실행
-        try:
-            exec(preprocessing_code)
-            print("LLM 생성 코드로 스케일링 완료")
-        except Exception as e:
-            print(f"LLM 생성 코드 실행 오류: {e}")
-            # 폴백: 기본 자동 처리
-            df = apply_basic_scaling(df, numeric_columns)
-    else:
-        # 수동 방법 사용
-        df = apply_manual_scaling(df, numeric_columns, method, inputs)
-    
-    # 스케일링 정보 생성
-    scaling_info = {}
-    for col in numeric_columns:
-        original_stats = {
-            'mean': df[col].mean(),
-            'std': df[col].std(),
-            'min': df[col].min(),
-            'max': df[col].max()
-        }
-        scaling_info[col] = {
-            'original_stats': original_stats,
-            'method': method
-        }
-    
-    print(f"스케일링 완료: {len(numeric_columns)}개 컬럼 처리")
-    
-    return {
-        **inputs,
-        "dataframe": df,
-        "scaling_info": scaling_info
-    }
-
-
-def generate_scaling_code_with_llm(df: pd.DataFrame, numeric_columns: List[str],
-                                 numeric_analysis_text: str, numeric_image_paths: List[str],
-                                 outlier_analysis_text: str, text_analysis: str) -> str:
-    """
-    MultiModal LLM을 사용하여 스케일링 코드를 생성합니다.
-    """
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.1,
-        max_tokens=2000
-    )
-    
-    # 수치형 변수 정보 요약
-    numeric_summary = []
-    for col in numeric_columns:
-        stats = df[col].describe()
-        summary = f"{col}: mean={stats['mean']:.2f}, std={stats['std']:.2f}, range=[{stats['min']:.2f}, {stats['max']:.2f}]"
-        numeric_summary.append(summary)
-    
-    prompt = f"""
-You are a data preprocessing expert. Please write Python code to scale numeric variables based on the following information.
-
-=== Dataset Information ===
-- Data size: {df.shape[0]} rows x {df.shape[1]} columns
-- Numeric columns: {numeric_columns}
-- Dataset head:
-{df.head().to_string()}
-
-=== Numeric Variable Statistics ===
-{chr(10).join(numeric_summary)}
-
-=== Numeric Variable Analysis Results ===
-{numeric_analysis_text}
-
-=== Outlier Analysis Results ===
-{outlier_analysis_text}
-
-=== Overall Data Analysis ===
-{text_analysis}
-
-=== Requirements ===
-1. Use StandardScaler for variables with large standard deviation
-2. Use MinMaxScaler for variables with small standard deviation
-3. Consider RobustScaler for variables with many outliers
-4. Code must be executable
-
-Please write code in the following format:
-```python
-# Scaling code
-# df is an already defined DataFrame
-```
-
-Return only the code without explanations.
-"""
-
-    try:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        code = response.content
-        
-        # 코드 블록에서 실제 코드만 추출
-        if "```python" in code:
-            code = code.split("```python")[1].split("```")[0].strip()
-        elif "```" in code:
-            code = code.split("```")[1].split("```")[0].strip()
-        
-        return code
-    except Exception as e:
-        print(f"LLM 코드 생성 오류: {e}")
-        return ""
-
-
-def apply_basic_scaling(df: pd.DataFrame, numeric_columns: List[str]) -> pd.DataFrame:
-    """
-    기본 스케일링 방법을 적용합니다.
-    """
-    for col in numeric_columns:
-        original_stats = {
-            'mean': df[col].mean(),
-            'std': df[col].std(),
-            'min': df[col].min(),
-            'max': df[col].max(),
-            'range': df[col].max() - df[col].min()
-        }
-        
-        print(f"  {col}: 범위 {original_stats['min']:.2f} ~ {original_stats['max']:.2f}")
-        
-        # 자동 선택: 분포 특성에 따라 결정
-        if original_stats['std'] > 100:
-            # 표준편차가 큰 경우 StandardScaler
-            df[col] = (df[col] - original_stats['mean']) / original_stats['std']
-            print(f"    → StandardScaler 적용")
+        if std_dev > 1 or value_range > 10:
+            # 표준편차가 크거나 범위가 넓으면 StandardScaler
+            X_scaling_steps.append({
+                'column': col,
+                'method': 'standard',
+                'reason': f'표준편차 {std_dev:.2f}, 범위 {value_range:.2f}'
+            })
+            print(f"   📊 [PREPROCESSING] X {col}: StandardScaler")
         else:
-            # 표준편차가 작은 경우 MinMaxScaler
-            df[col] = (df[col] - original_stats['min']) / original_stats['range']
-            print(f"    → MinMaxScaler 적용")
+            # 그렇지 않으면 MinMaxScaler
+            X_scaling_steps.append({
+                'column': col,
+                'method': 'minmax',
+                'reason': f'표준편차 {std_dev:.2f}, 범위 {value_range:.2f}'
+            })
+            print(f"   📊 [PREPROCESSING] X {col}: MinMaxScaler")
     
-    return df
-
-
-def apply_manual_scaling(df: pd.DataFrame, numeric_columns: List[str], 
-                        method: str, inputs: Dict) -> pd.DataFrame:
-    """
-    수동 스케일링 방법을 적용합니다.
-    """
-    for col in numeric_columns:
-        original_stats = {
-            'mean': df[col].mean(),
-            'std': df[col].std(),
-            'min': df[col].min(),
-            'max': df[col].max(),
-            'range': df[col].max() - df[col].min()
+    # Y 수치형 변수 처리 (타겟 변수는 보통 스케일링하지 않음, 하지만 필요시 처리)
+    for col in Y_numeric_columns:
+        # 타겟 변수는 회귀 문제에서만 스케일링 고려
+        Y_scaling_steps.append({
+            'column': col,
+            'method': 'none',
+            'reason': '타겟 변수는 스케일링하지 않음'
+        })
+        print(f"   📊 [PREPROCESSING] Y {col}: 스케일링하지 않음 (타겟 변수)")
+    
+    # 전처리 코드 생성
+    print("💻 [PREPROCESSING] 스케일링 코드 생성 중...")
+    
+    code_lines = [
+        "# 수치형 변수 스케일링 (X/Y 분리)",
+        "import pandas as pd",
+        "import numpy as np",
+        "from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler",
+        "",
+        "def scale_numeric_variables(X, Y):",
+        "    \"\"\"X와 Y의 수치형 변수를 스케일링하는 함수\"\"\"",
+        "    X_processed = X.copy()",
+        "    Y_processed = Y.copy()",
+        ""
+    ]
+    
+    # X 스케일링 코드 추가
+    if X_scaling_steps:
+        code_lines.append("    # X 수치형 변수 스케일링")
+        
+        # StandardScaler가 필요한 컬럼들
+        X_standard_cols = [step['column'] for step in X_scaling_steps if step['method'] == 'standard']
+        if X_standard_cols:
+            code_lines.extend([
+                "    # StandardScaler 적용",
+                "    standard_scaler = StandardScaler()",
+                f"    X_processed[{X_standard_cols}] = standard_scaler.fit_transform(X_processed[{X_standard_cols}])",
+                f"    print(f'X 컬럼 {X_standard_cols} StandardScaler 적용 완료')",
+                ""
+            ])
+        
+        # MinMaxScaler가 필요한 컬럼들
+        X_minmax_cols = [step['column'] for step in X_scaling_steps if step['method'] == 'minmax']
+        if X_minmax_cols:
+            code_lines.extend([
+                "    # MinMaxScaler 적용",
+                "    minmax_scaler = MinMaxScaler()",
+                f"    X_processed[{X_minmax_cols}] = minmax_scaler.fit_transform(X_processed[{X_minmax_cols}])",
+                f"    print(f'X 컬럼 {X_minmax_cols} MinMaxScaler 적용 완료')",
+                ""
+            ])
+    
+    # Y 스케일링 코드 추가 (보통 스케일링하지 않음)
+    if Y_scaling_steps:
+        code_lines.append("    # Y 수치형 변수 (타겟 변수는 보통 스케일링하지 않음)")
+        code_lines.append("    # 필요시 아래 주석을 해제하여 스케일링 적용")
+        code_lines.append("    # Y_numeric_cols = Y_processed.select_dtypes(include=[np.number]).columns")
+        code_lines.append("    # if len(Y_numeric_cols) > 0:")
+        code_lines.append("    #     Y_scaler = StandardScaler()")
+        code_lines.append("    #     Y_processed[Y_numeric_cols] = Y_scaler.fit_transform(Y_processed[Y_numeric_cols])")
+        code_lines.append("")
+    
+    code_lines.extend([
+        "    return X_processed, Y_processed",
+        "",
+        "# 전처리 실행",
+        "X_processed, Y_processed = scale_numeric_variables(X, Y)"
+    ])
+    
+    preprocessing_code = "\n".join(code_lines)
+    
+    # 전처리 실행
+    print("🔄 [PREPROCESSING] 스케일링 실행 중...")
+    try:
+        X_processed, Y_processed = apply_basic_scaling(X, Y, X_scaling_steps, Y_scaling_steps)
+        
+        print(f"✅ [PREPROCESSING] 스케일링 완료")
+        print(f"   📊 [PREPROCESSING] X: {X.shape} → {X_processed.shape}")
+        print(f"   📊 [PREPROCESSING] Y: {Y.shape} → {Y_processed.shape}")
+        
+        return {
+            **inputs,
+            "X_processed": X_processed,
+            "Y_processed": Y_processed,
+            "preprocessing_code": preprocessing_code,
+            "preprocessing_summary": {
+                "X_numeric_scaled": len(X_scaling_steps),
+                "Y_numeric_scaled": len([s for s in Y_scaling_steps if s['method'] != 'none']),
+                "X_standard_scaled": len([s for s in X_scaling_steps if s['method'] == 'standard']),
+                "X_minmax_scaled": len([s for s in X_scaling_steps if s['method'] == 'minmax'])
+            }
         }
         
-        print(f"  {col}: 범위 {original_stats['min']:.2f} ~ {original_stats['max']:.2f}")
-        
-        if method == "standard":
-            # StandardScaler (Z-score normalization)
-            df[col] = (df[col] - original_stats['mean']) / original_stats['std']
-            print(f"    → StandardScaler 적용")
-        
-        elif method == "minmax":
-            # MinMaxScaler (0-1 정규화)
-            df[col] = (df[col] - original_stats['min']) / original_stats['range']
-            print(f"    → MinMaxScaler 적용")
-        
-        elif method == "robust":
-            # RobustScaler (중앙값과 IQR 사용)
-            median_val = df[col].median()
-            Q1 = df[col].quantile(0.25)
-            Q3 = df[col].quantile(0.75)
-            IQR = Q3 - Q1
-            
-            if IQR != 0:
-                df[col] = (df[col] - median_val) / IQR
-            else:
-                # IQR이 0인 경우 표준화 사용
-                df[col] = (df[col] - original_stats['mean']) / original_stats['std']
-                print(f"    ⚠️  IQR이 0이어서 StandardScaler로 대체")
-            
-            print(f"    → RobustScaler 적용")
-        
-        elif method == "normalize":
-            # L2 정규화 (벡터 정규화)
-            l2_norm = np.sqrt((df[col] ** 2).sum())
-            if l2_norm != 0:
-                df[col] = df[col] / l2_norm
-            print(f"    → L2 정규화 적용")
-        
-        elif method == "log":
-            # 로그 변환 (양수 값만)
-            if (df[col] > 0).all():
-                df[col] = np.log(df[col])
-                print(f"    → 로그 변환 적용")
-            else:
-                # 음수 값이 있는 경우 표준화 사용
-                df[col] = (df[col] - original_stats['mean']) / original_stats['std']
-                print(f"    ⚠️  음수 값이 있어 StandardScaler로 대체")
+    except Exception as e:
+        print(f"❌ [PREPROCESSING] 스케일링 실행 오류: {e}")
+        return {
+            **inputs,
+            "preprocessing_code": preprocessing_code,
+            "preprocessing_summary": f"스케일링 실행 오류: {str(e)}"
+        }
+
+
+def apply_basic_scaling(X: pd.DataFrame, Y: pd.DataFrame,
+                       X_steps: List[Dict], Y_steps: List[Dict]) -> tuple:
+    """
+    기본적인 수치형 변수 스케일링을 적용합니다.
     
-    return df
+    Args:
+        X: 특성 변수 데이터프레임
+        Y: 타겟 변수 데이터프레임
+        X_steps: X 스케일링 단계들
+        Y_steps: Y 스케일링 단계들
+        
+    Returns:
+        tuple: (X_processed, Y_processed) 처리된 데이터프레임들
+    """
+    X_processed = X.copy()
+    Y_processed = Y.copy()
+    
+    # X 처리
+    for step in X_steps:
+        col = step['column']
+        method = step['method']
+        
+        if method == 'standard':
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            X_processed[col] = scaler.fit_transform(X_processed[[col]])
+            
+        elif method == 'minmax':
+            from sklearn.preprocessing import MinMaxScaler
+            scaler = MinMaxScaler()
+            X_processed[col] = scaler.fit_transform(X_processed[[col]])
+            
+        elif method == 'robust':
+            from sklearn.preprocessing import RobustScaler
+            scaler = RobustScaler()
+            X_processed[col] = scaler.fit_transform(X_processed[[col]])
+    
+    # Y 처리 (보통 스케일링하지 않음)
+    for step in Y_steps:
+        col = step['column']
+        method = step['method']
+        
+        if method != 'none':
+            # 필요시 Y도 스케일링
+            from sklearn.preprocessing import StandardScaler
+            scaler = StandardScaler()
+            Y_processed[col] = scaler.fit_transform(Y_processed[[col]])
+    
+    return X_processed, Y_processed
 
 
-# LangGraph 노드로 사용할 수 있는 함수
-scaling_agent = RunnableLambda(scale_features)
+def apply_manual_scaling(X: pd.DataFrame, Y: pd.DataFrame,
+                        method: str, inputs: Dict) -> tuple:
+    """
+    사용자가 지정한 방법으로 수치형 변수를 스케일링합니다.
+    
+    Args:
+        X: 특성 변수 데이터프레임
+        Y: 타겟 변수 데이터프레임
+        method: 스케일링 방법
+        inputs: 추가 입력 정보
+        
+    Returns:
+        tuple: (X_processed, Y_processed) 처리된 데이터프레임들
+    """
+    X_processed = X.copy()
+    Y_processed = Y.copy()
+    
+    if method == "all_standard":
+        # 모든 수치형 변수를 StandardScaler로 스케일링
+        from sklearn.preprocessing import StandardScaler
+        
+        X_numeric = X_processed.select_dtypes(include=[np.number])
+        Y_numeric = Y_processed.select_dtypes(include=[np.number])
+        
+        if len(X_numeric.columns) > 0:
+            X_scaler = StandardScaler()
+            X_processed[X_numeric.columns] = X_scaler.fit_transform(X_numeric)
+            
+        if len(Y_numeric.columns) > 0:
+            Y_scaler = StandardScaler()
+            Y_processed[Y_numeric.columns] = Y_scaler.fit_transform(Y_numeric)
+            
+    elif method == "all_minmax":
+        # 모든 수치형 변수를 MinMaxScaler로 스케일링
+        from sklearn.preprocessing import MinMaxScaler
+        
+        X_numeric = X_processed.select_dtypes(include=[np.number])
+        Y_numeric = Y_processed.select_dtypes(include=[np.number])
+        
+        if len(X_numeric.columns) > 0:
+            X_scaler = MinMaxScaler()
+            X_processed[X_numeric.columns] = X_scaler.fit_transform(X_numeric)
+            
+        if len(Y_numeric.columns) > 0:
+            Y_scaler = MinMaxScaler()
+            Y_processed[Y_numeric.columns] = Y_scaler.fit_transform(Y_numeric)
+            
+    elif method == "robust":
+        # RobustScaler 사용 (이상치에 강함)
+        from sklearn.preprocessing import RobustScaler
+        
+        X_numeric = X_processed.select_dtypes(include=[np.number])
+        Y_numeric = Y_processed.select_dtypes(include=[np.number])
+        
+        if len(X_numeric.columns) > 0:
+            X_scaler = RobustScaler()
+            X_processed[X_numeric.columns] = X_scaler.fit_transform(X_numeric)
+            
+        if len(Y_numeric.columns) > 0:
+            Y_scaler = RobustScaler()
+            Y_processed[Y_numeric.columns] = Y_scaler.fit_transform(Y_numeric)
+    
+    return X_processed, Y_processed
+
+
+# LangChain Runnable으로 등록
+scaling_agent = RunnableLambda(handle_scaling)

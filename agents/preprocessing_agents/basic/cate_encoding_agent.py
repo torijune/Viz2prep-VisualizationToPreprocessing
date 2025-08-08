@@ -1,6 +1,6 @@
 """
 범주형 변수 인코딩 전처리 에이전트
-범주형 변수를 수치형으로 변환하는 다양한 인코딩 방법을 제공합니다.
+범주형 변수를 다양한 방법으로 인코딩합니다.
 """
 
 import pandas as pd
@@ -11,212 +11,296 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 
-def encode_categorical(inputs: Dict[str, Any]) -> Dict[str, Any]:
+def handle_categorical_encoding(inputs: Dict[str, Any]) -> Dict[str, Any]:
     """
-    범주형 변수를 인코딩하는 전처리 함수
+    범주형 변수를 인코딩하는 전처리 에이전트입니다.
     
     Args:
-        inputs: DataFrame과 인코딩 방법이 포함된 입력 딕셔너리
+        inputs: X, Y DataFrame과 EDA 결과가 포함된 입력 딕셔너리
         
     Returns:
-        인코딩된 DataFrame이 포함된 딕셔너리
+        전처리된 X, Y DataFrame과 코드가 포함된 딕셔너리
     """
-    df = inputs["dataframe"].copy()
-    method = inputs.get("encoding_method", "auto")  # auto, label, onehot, ordinal, target
-    columns = inputs.get("encoding_columns", None)  # 특정 컬럼만 인코딩
+    print("🔧 [PREPROCESSING] 범주형 변수 인코딩 시작...")
     
-    # EDA 결과물들 가져오기
-    cate_analysis_text = inputs.get("cate_analysis_text", "")
-    cate_image_paths = inputs.get("cate_image_paths", [])
-    text_analysis = inputs.get("text_analysis", "")
+    X = inputs["X"]
+    Y = inputs["Y"]
+    eda_results = inputs.get("eda_results", {})
     
-    # 범주형 컬럼 선택
-    if columns is None:
-        categorical_columns = df.select_dtypes(include=['object', 'category']).columns.tolist()
-    else:
-        categorical_columns = [col for col in columns if col in df.columns]
+    # X와 Y의 범주형 컬럼 찾기
+    X_categorical_columns = X.select_dtypes(include=['object', 'category']).columns.tolist()
+    Y_categorical_columns = Y.select_dtypes(include=['object', 'category']).columns.tolist()
     
-    if not categorical_columns:
-        print("범주형 인코딩: 범주형 변수가 없습니다.")
+    if not X_categorical_columns and not Y_categorical_columns:
+        print("✅ [PREPROCESSING] 범주형 변수가 없습니다.")
         return {
             **inputs,
-            "dataframe": df,
-            "encoding_info": {}
+            "preprocessing_code": "# 범주형 변수가 없으므로 인코딩 불필요",
+            "preprocessing_summary": "범주형 변수 없음"
         }
     
-    print(f"범주형 인코딩 시작: {method} 방법")
-    print(f"  대상 컬럼: {categorical_columns}")
+    print(f"📊 [PREPROCESSING] X 범주형 변수: {X_categorical_columns}")
+    print(f"📊 [PREPROCESSING] Y 범주형 변수: {Y_categorical_columns}")
     
-    # MultiModal LLM을 사용한 전처리 코드 생성
-    if method == "auto":
-        preprocessing_code = generate_categorical_encoding_code_with_llm(
-            df, categorical_columns, cate_analysis_text, cate_image_paths, text_analysis
-        )
+    # 인코딩 전략 결정
+    X_encoding_steps = []
+    Y_encoding_steps = []
+    
+    # X 범주형 변수 처리
+    for col in X_categorical_columns:
+        unique_count = X[col].nunique()
         
-        # 생성된 코드 실행
-        try:
-            exec(preprocessing_code)
-            print("LLM 생성 코드로 범주형 인코딩 완료")
-        except Exception as e:
-            print(f"LLM 생성 코드 실행 오류: {e}")
-            # 폴백: 기본 자동 처리
-            df = apply_basic_categorical_encoding(df, categorical_columns)
-    else:
-        # 수동 방법 사용
-        df = apply_manual_categorical_encoding(df, categorical_columns, method, inputs)
-    
-    # 인코딩 후 컬럼 정보 업데이트
-    final_columns = df.columns.tolist()
-    encoding_info = {
-        'final_columns': final_columns,
-        'column_count_change': len(final_columns) - len(categorical_columns)
-    }
-    
-    print(f"범주형 인코딩 완료: 최종 {len(final_columns)}개 컬럼")
-    
-    return {
-        **inputs,
-        "dataframe": df,
-        "encoding_info": encoding_info
-    }
-
-
-def generate_categorical_encoding_code_with_llm(df: pd.DataFrame, categorical_columns: List[str],
-                                             cate_analysis_text: str, cate_image_paths: List[str],
-                                             text_analysis: str) -> str:
-    """
-    MultiModal LLM을 사용하여 범주형 인코딩 코드를 생성합니다.
-    """
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.1,
-        max_tokens=2000
-    )
-    
-    # 범주형 변수 정보 요약
-    categorical_summary = []
-    for col in categorical_columns:
-        unique_count = df[col].nunique()
-        value_counts = df[col].value_counts().head(5)
-        summary = f"{col}: {unique_count}개 고유값, 상위값={dict(value_counts)}"
-        categorical_summary.append(summary)
-    
-    prompt = f"""
-You are a data preprocessing expert. Please write Python code to encode categorical variables based on the following information.
-
-=== Dataset Information ===
-- Data size: {df.shape[0]} rows x {df.shape[1]} columns
-- Categorical columns: {categorical_columns}
-- Dataset head:
-{df.head().to_string()}
-
-=== Categorical Variable Information ===
-{chr(10).join(categorical_summary)}
-
-=== Categorical Variable Analysis Results ===
-{cate_analysis_text}
-
-=== Overall Data Analysis ===
-{text_analysis}
-
-=== Requirements ===
-1. Use Label Encoding for variables with 10 or fewer unique values
-2. Use One-Hot Encoding for variables with many unique values
-3. Consider Ordinal Encoding for ordinal categorical variables
-4. Code must be executable
-
-Please write code in the following format:
-```python
-# Categorical variable encoding code
-# df is an already defined DataFrame
-```
-
-Return only the code without explanations.
-"""
-
-    try:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        code = response.content
-        
-        # 코드 블록에서 실제 코드만 추출
-        if "```python" in code:
-            code = code.split("```python")[1].split("```")[0].strip()
-        elif "```" in code:
-            code = code.split("```")[1].split("```")[0].strip()
-        
-        return code
-    except Exception as e:
-        print(f"LLM 코드 생성 오류: {e}")
-        return ""
-
-
-def apply_basic_categorical_encoding(df: pd.DataFrame, categorical_columns: List[str]) -> pd.DataFrame:
-    """
-    기본 범주형 인코딩 방법을 적용합니다.
-    """
-    for col in categorical_columns:
-        unique_count = df[col].nunique()
-        print(f"  {col}: {unique_count}개 고유값")
-        
-        if unique_count <= 10:
-            # 고유값이 10개 이하면 Label Encoding
-            df[col] = df[col].astype('category').cat.codes
-            print(f"    → Label Encoding 적용")
+        if unique_count <= 2:
+            # 이진 변수는 Label Encoding
+            X_encoding_steps.append({
+                'column': col,
+                'method': 'label',
+                'reason': f'이진 변수 (고유값 {unique_count}개)'
+            })
+            print(f"   📊 [PREPROCESSING] X {col}: Label Encoding (이진 변수)")
+        elif unique_count <= 10:
+            # 10개 이하 고유값은 One-Hot Encoding
+            X_encoding_steps.append({
+                'column': col,
+                'method': 'onehot',
+                'reason': f'범주형 변수 (고유값 {unique_count}개)'
+            })
+            print(f"   📊 [PREPROCESSING] X {col}: One-Hot Encoding")
         else:
-            # 고유값이 많으면 One-Hot Encoding
-            df = pd.get_dummies(df, columns=[col], prefix=col)
-            print(f"    → One-Hot Encoding 적용")
+            # 10개 초과는 Target Encoding 또는 삭제
+            X_encoding_steps.append({
+                'column': col,
+                'method': 'target',
+                'reason': f'고차원 범주형 변수 (고유값 {unique_count}개)'
+            })
+            print(f"   📊 [PREPROCESSING] X {col}: Target Encoding")
     
-    return df
-
-
-def apply_manual_categorical_encoding(df: pd.DataFrame, categorical_columns: List[str], 
-                                   method: str, inputs: Dict) -> pd.DataFrame:
-    """
-    수동 범주형 인코딩 방법을 적용합니다.
-    """
-    for col in categorical_columns:
-        unique_count = df[col].nunique()
-        print(f"  {col}: {unique_count}개 고유값")
+    # Y 범주형 변수 처리 (타겟 변수는 보통 Label Encoding)
+    for col in Y_categorical_columns:
+        Y_encoding_steps.append({
+            'column': col,
+            'method': 'label',
+            'reason': '타겟 변수는 Label Encoding 사용'
+        })
+        print(f"   📊 [PREPROCESSING] Y {col}: Label Encoding (타겟 변수)")
+    
+    # 전처리 코드 생성
+    print("💻 [PREPROCESSING] 인코딩 코드 생성 중...")
+    
+    code_lines = [
+        "# 범주형 변수 인코딩 (X/Y 분리)",
+        "import pandas as pd",
+        "import numpy as np",
+        "from sklearn.preprocessing import LabelEncoder, OneHotEncoder",
+        "from sklearn.compose import ColumnTransformer",
+        "",
+        "def encode_categorical_variables(X, Y):",
+        "    \"\"\"X와 Y의 범주형 변수를 인코딩하는 함수\"\"\"",
+        "    X_processed = X.copy()",
+        "    Y_processed = Y.copy()",
+        ""
+    ]
+    
+    # X 인코딩 코드 추가
+    if X_encoding_steps:
+        code_lines.append("    # X 범주형 변수 인코딩")
         
-        if method == "label":
+        # Label Encoding이 필요한 컬럼들
+        X_label_cols = [step['column'] for step in X_encoding_steps if step['method'] == 'label']
+        if X_label_cols:
+            code_lines.append("    # Label Encoding")
+            for col in X_label_cols:
+                code_lines.extend([
+                    f"    le_{col} = LabelEncoder()",
+                    f"    X_processed['{col}'] = le_{col}.fit_transform(X_processed['{col}'])",
+                    f"    print(f'X 컬럼 {col} Label Encoding 완료')"
+                ])
+            code_lines.append("")
+        
+        # One-Hot Encoding이 필요한 컬럼들
+        X_onehot_cols = [step['column'] for step in X_encoding_steps if step['method'] == 'onehot']
+        if X_onehot_cols:
+            code_lines.extend([
+                "    # One-Hot Encoding",
+                "    X_onehot_columns = []",
+                "    for col in X_processed.select_dtypes(include=['object', 'category']).columns:",
+                "        if col in X_processed.columns:",
+                "            dummies = pd.get_dummies(X_processed[col], prefix=col)",
+                "            X_processed = pd.concat([X_processed, dummies], axis=1)",
+                "            X_processed = X_processed.drop(columns=[col])",
+                "            X_onehot_columns.extend(dummies.columns.tolist())",
+                "            print(f'X 컬럼 {col} One-Hot Encoding 완료')",
+                ""
+            ])
+        
+        # Target Encoding이 필요한 컬럼들
+        X_target_cols = [step['column'] for step in X_encoding_steps if step['method'] == 'target']
+        if X_target_cols:
+            code_lines.extend([
+                "    # Target Encoding",
+                "    for col in X_processed.select_dtypes(include=['object', 'category']).columns:",
+                "        if col in X_processed.columns:",
+                "            # 간단한 Target Encoding (평균값 사용)",
+                "            target_means = X_processed.groupby(col)[Y_processed.columns[0]].mean()",
+                "            X_processed[col] = X_processed[col].map(target_means)",
+                "            print(f'X 컬럼 {col} Target Encoding 완료')",
+                ""
+            ])
+    
+    # Y 인코딩 코드 추가
+    if Y_encoding_steps:
+        code_lines.append("    # Y 범주형 변수 인코딩")
+        for step in Y_encoding_steps:
+            col = step['column']
+            code_lines.extend([
+                f"    le_Y_{col} = LabelEncoder()",
+                f"    Y_processed['{col}'] = le_Y_{col}.fit_transform(Y_processed['{col}'])",
+                f"    print(f'Y 컬럼 {col} Label Encoding 완료')"
+            ])
+        code_lines.append("")
+    
+    code_lines.extend([
+        "    return X_processed, Y_processed",
+        "",
+        "# 전처리 실행",
+        "X_processed, Y_processed = encode_categorical_variables(X, Y)"
+    ])
+    
+    preprocessing_code = "\n".join(code_lines)
+    
+    # 전처리 실행
+    print("🔄 [PREPROCESSING] 인코딩 실행 중...")
+    try:
+        X_processed, Y_processed = apply_basic_categorical_encoding(X, Y, X_encoding_steps, Y_encoding_steps)
+        
+        print(f"✅ [PREPROCESSING] 인코딩 완료")
+        print(f"   📊 [PREPROCESSING] X: {X.shape} → {X_processed.shape}")
+        print(f"   📊 [PREPROCESSING] Y: {Y.shape} → {Y_processed.shape}")
+        
+        return {
+            **inputs,
+            "X_processed": X_processed,
+            "Y_processed": Y_processed,
+            "preprocessing_code": preprocessing_code,
+            "preprocessing_summary": {
+                "X_categorical_encoded": len(X_encoding_steps),
+                "Y_categorical_encoded": len(Y_encoding_steps),
+                "X_label_encoded": len([s for s in X_encoding_steps if s['method'] == 'label']),
+                "X_onehot_encoded": len([s for s in X_encoding_steps if s['method'] == 'onehot']),
+                "X_target_encoded": len([s for s in X_encoding_steps if s['method'] == 'target'])
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ [PREPROCESSING] 인코딩 실행 오류: {e}")
+        return {
+            **inputs,
+            "preprocessing_code": preprocessing_code,
+            "preprocessing_summary": f"인코딩 실행 오류: {str(e)}"
+        }
+
+
+def apply_basic_categorical_encoding(X: pd.DataFrame, Y: pd.DataFrame,
+                                   X_steps: List[Dict], Y_steps: List[Dict]) -> tuple:
+    """
+    기본적인 범주형 변수 인코딩을 적용합니다.
+    
+    Args:
+        X: 특성 변수 데이터프레임
+        Y: 타겟 변수 데이터프레임
+        X_steps: X 인코딩 단계들
+        Y_steps: Y 인코딩 단계들
+        
+    Returns:
+        tuple: (X_processed, Y_processed) 처리된 데이터프레임들
+    """
+    X_processed = X.copy()
+    Y_processed = Y.copy()
+    
+    # X 처리
+    for step in X_steps:
+        col = step['column']
+        method = step['method']
+        
+        if method == 'label':
             # Label Encoding
-            df[col] = df[col].astype('category').cat.codes
-            print(f"    → Label Encoding 적용")
-        
-        elif method == "onehot":
+            from sklearn.preprocessing import LabelEncoder
+            le = LabelEncoder()
+            X_processed[col] = le.fit_transform(X_processed[col].astype(str))
+            
+        elif method == 'onehot':
             # One-Hot Encoding
-            df = pd.get_dummies(df, columns=[col], prefix=col)
-            print(f"    → One-Hot Encoding 적용")
-        
-        elif method == "ordinal":
-            # Ordinal Encoding (순서가 있는 경우)
-            # 알파벳 순서로 정렬하여 인코딩
-            unique_values = sorted(df[col].unique())
-            value_to_code = {val: idx for idx, val in enumerate(unique_values)}
-            df[col] = df[col].map(value_to_code)
-            print(f"    → Ordinal Encoding 적용")
-        
-        elif method == "target":
-            # Target Encoding (타겟 변수가 있는 경우)
-            target_col = inputs.get("target_column")
-            if target_col and target_col in df.columns:
-                # 타겟 변수의 평균값으로 인코딩
-                target_means = df.groupby(col)[target_col].mean()
-                df[col] = df[col].map(target_means)
-                print(f"    → Target Encoding 적용")
-            else:
-                print(f"    ⚠️  Target Encoding을 위한 타겟 변수가 없어 Label Encoding으로 대체")
-                df[col] = df[col].astype('category').cat.codes
-        
-        elif method == "frequency":
-            # Frequency Encoding (빈도 기반)
-            value_counts = df[col].value_counts()
-            df[col] = df[col].map(value_counts)
-            print(f"    → Frequency Encoding 적용")
+            dummies = pd.get_dummies(X_processed[col], prefix=col)
+            X_processed = pd.concat([X_processed, dummies], axis=1)
+            X_processed = X_processed.drop(columns=[col])
+            
+        elif method == 'target':
+            # Target Encoding (간단한 버전)
+            if len(Y_processed.columns) > 0:
+                target_col = Y_processed.columns[0]
+                target_means = X_processed.groupby(col)[target_col].mean()
+                X_processed[col] = X_processed[col].map(target_means)
+                X_processed[col] = X_processed[col].fillna(target_means.mean())
     
-    return df
+    # Y 처리 (타겟 변수는 보통 Label Encoding)
+    for step in Y_steps:
+        col = step['column']
+        from sklearn.preprocessing import LabelEncoder
+        le = LabelEncoder()
+        Y_processed[col] = le.fit_transform(Y_processed[col].astype(str))
+    
+    return X_processed, Y_processed
 
 
-# LangGraph 노드로 사용할 수 있는 함수
-cate_encoding_agent = RunnableLambda(encode_categorical)
+def apply_manual_categorical_encoding(X: pd.DataFrame, Y: pd.DataFrame,
+                                    method: str, inputs: Dict) -> tuple:
+    """
+    사용자가 지정한 방법으로 범주형 변수를 인코딩합니다.
+    
+    Args:
+        X: 특성 변수 데이터프레임
+        Y: 타겟 변수 데이터프레임
+        method: 인코딩 방법
+        inputs: 추가 입력 정보
+        
+    Returns:
+        tuple: (X_processed, Y_processed) 처리된 데이터프레임들
+    """
+    X_processed = X.copy()
+    Y_processed = Y.copy()
+    
+    if method == "all_onehot":
+        # 모든 범주형 변수를 One-Hot Encoding
+        X_categorical = X_processed.select_dtypes(include=['object', 'category'])
+        Y_categorical = Y_processed.select_dtypes(include=['object', 'category'])
+        
+        for col in X_categorical.columns:
+            dummies = pd.get_dummies(X_processed[col], prefix=col)
+            X_processed = pd.concat([X_processed, dummies], axis=1)
+            X_processed = X_processed.drop(columns=[col])
+            
+        for col in Y_categorical.columns:
+            dummies = pd.get_dummies(Y_processed[col], prefix=col)
+            Y_processed = pd.concat([Y_processed, dummies], axis=1)
+            Y_processed = Y_processed.drop(columns=[col])
+            
+    elif method == "all_label":
+        # 모든 범주형 변수를 Label Encoding
+        from sklearn.preprocessing import LabelEncoder
+        
+        X_categorical = X_processed.select_dtypes(include=['object', 'category'])
+        Y_categorical = Y_processed.select_dtypes(include=['object', 'category'])
+        
+        for col in X_categorical.columns:
+            le = LabelEncoder()
+            X_processed[col] = le.fit_transform(X_processed[col].astype(str))
+            
+        for col in Y_categorical.columns:
+            le = LabelEncoder()
+            Y_processed[col] = le.fit_transform(Y_processed[col].astype(str))
+    
+    return X_processed, Y_processed
+
+
+# LangChain Runnable으로 등록
+categorical_encoding_agent = RunnableLambda(handle_categorical_encoding)

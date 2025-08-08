@@ -40,7 +40,7 @@ def create_null_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     # 1. 결측값 히트맵
     plt.figure(figsize=(12, 8))
     sns.heatmap(df.isnull(), yticklabels=False, cbar=True, cmap='viridis')
-    plt.title('결측값 히트맵')
+    plt.title('Missing Values Heatmap')
     plt.tight_layout()
     null_heatmap_path = os.path.join("generated_plots", "null_heatmap.png")
     plt.savefig(null_heatmap_path, dpi=300, bbox_inches='tight')
@@ -53,9 +53,9 @@ def create_null_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     
     plt.figure(figsize=(12, 6))
     bars = plt.bar(range(len(missing_counts)), missing_percentages)
-    plt.xlabel('컬럼')
-    plt.ylabel('결측값 비율 (%)')
-    plt.title('컬럼별 결측값 비율')
+    plt.xlabel('Column')
+    plt.ylabel('Missing Values Ratio (%)')
+    plt.title('Missing Values Ratio by Column')
     plt.xticks(range(len(missing_counts)), df.columns, rotation=45, ha='right')
     
     # 값이 있는 바에만 텍스트 표시
@@ -81,7 +81,7 @@ def create_null_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
             plt.figure(figsize=(10, 8))
             sns.heatmap(null_corr, annot=True, cmap='coolwarm', center=0,
                        square=True, linewidths=0.5)
-            plt.title('결측값 패턴 상관관계')
+            plt.title('Missing Values Pattern Correlation')
             plt.tight_layout()
             null_pattern_path = os.path.join("generated_plots", "null_pattern.png")
             plt.savefig(null_pattern_path, dpi=300, bbox_inches='tight')
@@ -94,12 +94,12 @@ def create_null_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     missing_ratio = (total_missing / total_cells) * 100
     
     plt.figure(figsize=(8, 8))
-    labels = ['결측값', '유효값']
+    labels = ['Missing Values', 'Valid Values']
     sizes = [missing_ratio, 100 - missing_ratio]
     colors = ['#ff9999', '#66b3ff']
     
     plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-    plt.title('전체 데이터 결측값 비율')
+    plt.title('Overall Missing Values Ratio')
     plt.axis('equal')
     
     null_pie_path = os.path.join("generated_plots", "null_pie.png")

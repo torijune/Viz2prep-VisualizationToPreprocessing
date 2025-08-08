@@ -46,7 +46,7 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
     sns.heatmap(correlation_matrix, mask=mask, annot=True, cmap='coolwarm', center=0,
                square=True, linewidths=0.5, fmt='.2f')
-    plt.title('변수 간 상관관계 히트맵')
+    plt.title('Variables Correlation Heatmap')
     plt.tight_layout()
     corr_heatmap_path = "generated_plots/correlation_heatmap.png"
     plt.savefig(corr_heatmap_path, dpi=300, bbox_inches='tight')
@@ -71,8 +71,8 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         plt.subplot(2, 1, 1)
         colors = ['red' if x < 0 else 'blue' for x in target_correlations.values]
         plt.bar(range(len(target_correlations)), target_correlations.values, color=colors)
-        plt.title(f'{target_column}와의 상관관계')
-        plt.ylabel('상관계수')
+        plt.title(f'Correlation with {target_column}')
+        plt.ylabel('Correlation Coefficient')
         plt.xticks(range(len(target_correlations)), target_correlations.index, rotation=45, ha='right')
         plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
         
@@ -81,8 +81,8 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         abs_correlations = target_correlations.abs().sort_values(ascending=False)
         colors = ['red' if target_correlations[col] < 0 else 'blue' for col in abs_correlations.index]
         plt.bar(range(len(abs_correlations)), abs_correlations.values, color=colors)
-        plt.title(f'{target_column}와의 상관관계 (절댓값 기준)')
-        plt.ylabel('|상관계수|')
+        plt.title(f'Correlation with {target_column} (Absolute Values)')
+        plt.ylabel('|Correlation Coefficient|')
         plt.xticks(range(len(abs_correlations)), abs_correlations.index, rotation=45, ha='right')
         
         plt.tight_layout()
@@ -110,7 +110,7 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     if len(plot_columns) >= 2:
         plt.figure(figsize=(15, 12))
         sns.pairplot(df[plot_columns], diag_kind='hist')
-        plt.suptitle('변수 간 산점도 매트릭스', y=1.02)
+        plt.suptitle('Variable Pairplot Matrix', y=1.02)
         plt.tight_layout()
         pairplot_path = "generated_plots/correlation_pairplot.png"
         plt.savefig(pairplot_path, dpi=300, bbox_inches='tight')
@@ -166,7 +166,7 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         
         nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=edge_weights, alpha=0.7)
         
-        plt.title('강한 상관관계 네트워크 (|r| >= 0.5)')
+        plt.title('Strong Correlation Network (|r| >= 0.5)')
         plt.axis('off')
         plt.tight_layout()
         network_path = "generated_plots/correlation_network.png"
@@ -182,28 +182,28 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     
     plt.subplot(2, 2, 1)
     plt.hist(all_correlations, bins=20, alpha=0.7, edgecolor='black')
-    plt.title('상관관계 분포')
-    plt.xlabel('상관계수')
-    plt.ylabel('빈도')
+    plt.title('Correlation Distribution')
+    plt.xlabel('Correlation Coefficient')
+    plt.ylabel('Frequency')
     
     plt.subplot(2, 2, 2)
     plt.hist(all_correlations[all_correlations > 0], bins=15, alpha=0.7, color='blue', edgecolor='black')
-    plt.title('양의 상관관계 분포')
-    plt.xlabel('상관계수')
-    plt.ylabel('빈도')
+    plt.title('Positive Correlation Distribution')
+    plt.xlabel('Correlation Coefficient')
+    plt.ylabel('Frequency')
     
     plt.subplot(2, 2, 3)
     plt.hist(all_correlations[all_correlations < 0], bins=15, alpha=0.7, color='red', edgecolor='black')
-    plt.title('음의 상관관계 분포')
-    plt.xlabel('상관계수')
-    plt.ylabel('빈도')
+    plt.title('Negative Correlation Distribution')
+    plt.xlabel('Correlation Coefficient')
+    plt.ylabel('Frequency')
     
     plt.subplot(2, 2, 4)
     abs_correlations = np.abs(all_correlations)
     plt.hist(abs_correlations, bins=15, alpha=0.7, color='green', edgecolor='black')
-    plt.title('상관관계 강도 분포')
-    plt.xlabel('|상관계수|')
-    plt.ylabel('빈도')
+    plt.title('Correlation Strength Distribution')
+    plt.xlabel('|Correlation Coefficient|')
+    plt.ylabel('Frequency')
     
     plt.tight_layout()
     corr_dist_path = "generated_plots/correlation_distribution.png"
@@ -233,20 +233,20 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         colors = ['red' if x < 0 else 'blue' for x in corr_values]
         
         plt.bar(range(len(high_corr_pairs)), corr_values, color=colors)
-        plt.title('다중공선성이 의심되는 변수 쌍 (|r| >= 0.8)')
-        plt.ylabel('상관계수')
+        plt.title('Variables with Multicollinearity Concerns (|r| >= 0.8)')
+        plt.ylabel('Correlation Coefficient')
         plt.xticks(range(len(high_corr_pairs)), pair_labels, rotation=45, ha='right')
         plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
         
         plt.subplot(2, 1, 2)
         abs_values = [abs(pair['correlation']) for pair in high_corr_pairs]
         plt.bar(range(len(high_corr_pairs)), abs_values, color='orange')
-        plt.title('다중공선성 강도')
-        plt.ylabel('|상관계수|')
+        plt.title('Multicollinearity Strength')
+        plt.ylabel('|Correlation Coefficient|')
         plt.xticks(range(len(high_corr_pairs)), pair_labels, rotation=45, ha='right')
     else:
-        plt.text(0.5, 0.5, '다중공선성 문제 없음', ha='center', va='center', transform=plt.gca().transAxes)
-        plt.title('다중공선성 분석')
+        plt.text(0.5, 0.5, 'No Multicollinearity Issues', ha='center', va='center', transform=plt.gca().transAxes)
+        plt.title('Multicollinearity Analysis')
     
     plt.tight_layout()
     multicollinearity_path = "generated_plots/multicollinearity.png"
@@ -254,7 +254,7 @@ def create_correlation_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     plt.close()
     image_paths.append(multicollinearity_path)
     
-    print(f"상관관계 시각화 완료: {len(image_paths)}개 이미지 생성")
+    print(f"Correlation Visualization Complete: {len(image_paths)} images generated")
     
     return {
         **inputs,

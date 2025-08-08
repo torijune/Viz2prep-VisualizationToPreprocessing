@@ -49,6 +49,8 @@ class KnowledgeBaseRAGAgent:
         Returns:
             Dict: 추천된 기법들과 관련 정보
         """
+        print(f"🔍 [KB-RAG] '{query}' 쿼리로 기법 검색 중...")
+        
         # 키워드 기반 매칭
         query_lower = query.lower()
         matched_techniques = []
@@ -58,6 +60,7 @@ class KnowledgeBaseRAGAgent:
             for technique in suggested_techniques:
                 if technique in self.available_techniques:
                     matched_techniques.append(technique)
+                    print(f"   ✅ [KB-RAG] 제안된 기법 '{technique}' 추가")
         
         # 2. 쿼리 기반으로 추가 기법 검색
         keyword_mapping = {
@@ -83,14 +86,22 @@ class KnowledgeBaseRAGAgent:
         
         for keyword, techniques in keyword_mapping.items():
             if keyword in query_lower:
+                print(f"   🎯 [KB-RAG] '{keyword}' 키워드 매칭됨")
                 for technique in techniques:
                     if technique not in matched_techniques:
                         matched_techniques.append(technique)
+                        print(f"      ✅ [KB-RAG] '{technique}' 기법 추가")
+                break
         
         # 3. 제안된 기법이 없으면 기본 기법들 추천
         if not matched_techniques:
+            print("   ⚠️  [KB-RAG] 매칭되는 키워드가 없어 기본 기법 추천")
             # 기본적으로 자주 사용되는 기법들
             matched_techniques = ['fill_numerical_median', 'iqr_outlier_detection', 'standard_scaling']
+        
+        print(f"✅ [KB-RAG] 검색 완료 - {len(matched_techniques)}개 기법 발견")
+        for technique in matched_techniques:
+            print(f"   - {technique}")
         
         return {
             'query': query,

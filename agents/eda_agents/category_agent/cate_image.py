@@ -56,8 +56,8 @@ def create_categorical_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
             plt.bar(range(len(value_counts)), value_counts.values)
             plt.xticks(range(len(value_counts)), value_counts.index, rotation=45, ha='right')
         
-        plt.title(f'{col} 분포')
-        plt.ylabel('개수')
+        plt.title(f'{col} Distribution')
+        plt.ylabel('Count')
         plt.tight_layout()
     
     barplot_path = "generated_plots/categorical_barplots.png"
@@ -78,12 +78,12 @@ def create_categorical_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         top_5 = value_counts.head(5)
         if len(value_counts) > 5:
             others = value_counts.iloc[5:].sum()
-            top_5_with_others = pd.concat([top_5, pd.Series({'기타': others})])
+            top_5_with_others = pd.concat([top_5, pd.Series({'Others': others})])
         else:
             top_5_with_others = top_5
         
         plt.pie(top_5_with_others.values, labels=top_5_with_others.index, autopct='%1.1f%%')
-        plt.title(f'{col} 상위 5개 분포')
+        plt.title(f'{col} Top 5 Distribution')
     
     plt.tight_layout()
     piechart_path = "generated_plots/categorical_piecharts.png"
@@ -117,19 +117,20 @@ def create_categorical_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         plt.figure(figsize=(10, 6))
         sns.heatmap(imbalance_df.set_index('column')[['balance_ratio', 'entropy']], 
                    annot=True, cmap='RdYlBu_r', center=0.5)
-        plt.title('범주형 변수 불균형 지표')
+        plt.title('Categorical Variables Imbalance Indicators')
         plt.tight_layout()
         imbalance_path = "generated_plots/categorical_imbalance.png"
         plt.savefig(imbalance_path, dpi=300, bbox_inches='tight')
         plt.close()
         image_paths.append(imbalance_path)
     
-    # 4. 범주형 변수 간 관계 히트맵
-    if len(categorical_columns) >= 2:
-        plt.figure(figsize=(12, 10))
+    # 4. 범주형 변수 간 관계 분석 (카이제곱 검정)
+    if len(categorical_columns) > 1:
+        print("   🔗 [EDA] 범주형 변수 간 관계 분석 중...")
+        plt.figure(figsize=(10, 8))
         
-        # 카이제곱 통계 계산
-        chi_square_matrix = pd.DataFrame(index=categorical_columns, columns=categorical_columns)
+        # 카이제곱 검정을 위한 관계 강도 매트릭스 생성
+        chi_square_matrix = pd.DataFrame(0.0, index=categorical_columns, columns=categorical_columns)
         
         for col1 in categorical_columns:
             for col2 in categorical_columns:
@@ -148,7 +149,7 @@ def create_categorical_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
                         chi_square_matrix.loc[col1, col2] = 0
         
         sns.heatmap(chi_square_matrix, annot=True, cmap='Blues', vmin=0, vmax=1)
-        plt.title('범주형 변수 간 관계 강도 (카이제곱 기반)')
+        plt.title('Categorical Variables Relationship Strength (Chi-square based)')
         plt.tight_layout()
         relationship_path = "generated_plots/categorical_relationships.png"
         plt.savefig(relationship_path, dpi=300, bbox_inches='tight')
@@ -164,21 +165,21 @@ def create_categorical_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         cardinality_data.append({
             'column': col,
             'unique_count': unique_count,
-            'cardinality_level': '높음' if unique_count > 50 else '보통' if unique_count > 10 else '낮음'
+            'cardinality_level': 'High' if unique_count > 50 else 'Medium' if unique_count > 10 else 'Low'
         })
     
     cardinality_df = pd.DataFrame(cardinality_data)
     
     plt.subplot(2, 1, 1)
     plt.bar(cardinality_df['column'], cardinality_df['unique_count'])
-    plt.title('범주형 변수별 고유값 개수')
-    plt.ylabel('고유값 개수')
+    plt.title('Unique Values Count by Categorical Variable')
+    plt.ylabel('Unique Count')
     plt.xticks(rotation=45)
     
     plt.subplot(2, 1, 2)
     cardinality_counts = cardinality_df['cardinality_level'].value_counts()
     plt.pie(cardinality_counts.values, labels=cardinality_counts.index, autopct='%1.1f%%')
-    plt.title('카디널리티 레벨 분포')
+    plt.title('Cardinality Level Distribution')
     
     plt.tight_layout()
     cardinality_path = "generated_plots/categorical_cardinality.png"
@@ -202,14 +203,14 @@ def create_categorical_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     plt.figure(figsize=(12, 6))
     plt.subplot(1, 2, 1)
     plt.bar(missing_df['column'], missing_df['missing_count'])
-    plt.title('범주형 변수별 결측값 개수')
-    plt.ylabel('결측값 개수')
+    plt.title('Missing Values Count by Categorical Variable')
+    plt.ylabel('Missing Count')
     plt.xticks(rotation=45)
     
     plt.subplot(1, 2, 2)
     plt.bar(missing_df['column'], missing_df['missing_percentage'])
-    plt.title('범주형 변수별 결측값 비율')
-    plt.ylabel('결측값 비율 (%)')
+    plt.title('Missing Values Percentage by Categorical Variable')
+    plt.ylabel('Missing Percentage (%)')
     plt.xticks(rotation=45)
     
     plt.tight_layout()

@@ -12,3 +12,6 @@ python-dotenv==1.0.1
 scipy==1.13.1
 imbalanced-learn==0.12.2
 umap-learn==0.5.5 
+networkx
+ucimlrepo
+dotenv

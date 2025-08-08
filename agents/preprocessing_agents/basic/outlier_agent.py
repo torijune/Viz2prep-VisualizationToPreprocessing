@@ -71,10 +71,20 @@ def handle_outliers(inputs: Dict[str, Any]) -> Dict[str, Any]:
     
     print(f"이상치 처리 완료: 탐지 {total_outliers}개, 제거 {total_removed}개, 제한 {total_capped}개")
     
+    # LLM 생성 코드를 포함한 결과 반환
+    preprocessing_code = ""
+    if method == "auto":
+        preprocessing_code = generate_outlier_code_with_llm(
+            df, numeric_columns, outlier_analysis_text, outlier_image_paths,
+            numeric_analysis_text, text_analysis, action
+        )
+    
     return {
         **inputs,
         "dataframe": df,
-        "outlier_info": outlier_info
+        "outlier_info": outlier_info,
+        "code": preprocessing_code,
+        "summary": f"이상치 처리 완료: 탐지 {total_outliers}개, 제거 {total_removed}개, 제한 {total_capped}개"
     }
 
 

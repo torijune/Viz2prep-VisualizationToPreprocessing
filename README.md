@@ -1,63 +1,99 @@
 # Viz2prep: Visualization to Preprocessing
 
-멀티모달 LLM 에이전트를 사용하여 시각화 기반 데이터 전처리 성능을 평가하는 프로젝트입니다.
+전문화된 다중 에이전트 시스템을 사용하여 시각화 기반 데이터 전처리를 수행하는 프로젝트입니다.
 
-## 프로젝트 목표
+## 🎯 프로젝트 목표
 
-통계 요약과 시각화 플롯을 모두 제공받은 멀티모달 LLM이 유용한 전처리 코드를 생성할 수 있는지 평가합니다.
+LangGraph를 활용한 전문화된 다중 에이전트 시스템으로 체계적이고 자동화된 데이터 전처리 워크플로우를 구현합니다.
 
-## 새로운 RAG 기반 아키텍처
+## 🏗️ 새로운 전문화된 다중 에이전트 아키텍처
 
-### 개요
-EDA 결과 → Planning Agent → KB RAG Agent → 코드 생성
-
-### 구성 요소
-
-#### 1. Planning Agent (`planning_agents/`)
-- **역할**: EDA 결과를 분석하여 전처리 작업 계획 수립
-- **기능**:
-  - EDA 결과 분석 및 전처리 필요성 판단
-  - 작업 우선순위 결정
-  - 의존성 검사 및 순서 조정
-  - LLM 기반 계획 생성
-
-#### 2. KB RAG Agent (`KB_rag_agents/`)
-- **역할**: Knowledge Base를 활용한 RAG 기반 코드 생성
-- **기능**:
-  - 전처리 코드 Knowledge Base 구축
-  - OpenAI Embedding을 사용한 유사도 검색
-  - 관련 코드 예제 검색 및 참조
-  - LLM 기반 코드 생성
-
-#### 3. Knowledge Base 구조
+### 📊 전체 아키텍처
 ```
-KB_rag_agents/
-├── knowledge_base/
-│   ├── preprocessing_codes.json  # 전처리 코드 예제
-│   └── embeddings.pkl           # 임베딩 벡터
-├── KB_rag_agent.py             # RAG Agent
-└── manage_kb.py                # Knowledge Base 관리 도구
+EDA Layer (5개 병렬) → Planning Layer (5개 순차) → 
+Coding Layer (5개 순차) → Execution Layer (1개) → Response Layer (1개)
 ```
 
-### 전처리 카테고리
-1. **Missing Values** (결측값 처리)
-2. **Outliers** (이상치 처리)
-3. **Categorical Encoding** (범주형 인코딩)
-4. **Scaling** (스케일링)
-5. **Feature Selection** (특성 선택)
-6. **Feature Engineering** (특성 엔지니어링)
-7. **Dimensionality Reduction** (차원 축소)
-8. **Class Imbalance** (클래스 불균형)
+### 🔍 구성 요소
 
-## 기존 아키텍처
+#### 1. EDA Layer (5개 전문 에이전트)
+- **`numeric_agent`**: 수치형 변수 전문 분석
+- **`category_agent`**: 범주형 변수 전문 분석  
+- **`outlier_agent`**: 이상치 전문 분석
+- **`nulldata_agent`**: 결측값 전문 분석
+- **`corr_agent`**: 상관관계 전문 분석
 
-1. **DataLoader**: CSV 데이터를 로드
-2. **StatisticsAgent**: 데이터 통계 요약 생성
-3. **VisualizationAgent**: EDA 플롯 생성
-4. **PreprocessingAgent**: 멀티모달 LLM을 사용한 전처리 코드 생성
-5. **Evaluator**: ML 성능 비교 평가
+#### 2. Planning Layer (5개 전문 플래너)
+- **`numeric_planner`**: 수치형 전처리 계획 수립
+- **`category_planner`**: 범주형 전처리 계획 수립
+- **`outlier_planner`**: 이상치 전처리 계획 수립
+- **`nulldata_planner`**: 결측값 전처리 계획 수립
+- **`corr_planner`**: 상관관계 전처리 계획 수립
 
-## 설치 및 실행
+#### 3. Coding Layer (5개 전문 코더)
+- **`numeric_coder`**: Knowledge Base 활용 수치형 코드 생성
+- **`category_coder`**: Knowledge Base 활용 범주형 코드 생성
+- **`outlier_coder`**: Knowledge Base 활용 이상치 코드 생성
+- **`nulldata_coder`**: Knowledge Base 활용 결측값 코드 생성
+- **`corr_coder`**: Knowledge Base 활용 상관관계 코드 생성
+
+#### 4. Execution & Debug & Response Layer (3개)
+- **`executor`**: 5개 도메인 코드를 순서대로 통합 실행
+- **`debug_agent`**: 코드 오류 자동 디버깅 및 수정
+- **`responder`**: LLM 기반 최종 응답 생성
+
+### 🗺️ 워크플로우 State 구조
+
+#### 📊 INPUT STATES (2개)
+- `query`: 사용자의 전처리 요청
+- `dataframe`: 원본 데이터프레임
+
+### 🔄 워크플로우 플로우
+
+```
+START → EDA Layer (5개 병렬) → Planning Layer (5개 순차) → 
+Coding Layer (5개 순차) → Execution Layer → Debug Layer → 
+조건부 라우팅: Debug 성공 시 → Execution Layer (재실행) → Response Layer
+Debug 실패 시 → Response Layer
+```
+
+#### 🔍 EDA STATES (5개)
+- `numeric_eda_result`: 수치형 변수 EDA 결과
+- `category_eda_result`: 범주형 변수 EDA 결과
+- `outlier_eda_result`: 이상치 EDA 결과
+- `nulldata_eda_result`: 결측값 EDA 결과
+- `corr_eda_result`: 상관관계 EDA 결과
+
+#### 📋 PLANNING STATES (5개)
+- `numeric_plan`: 수치형 전처리 계획
+- `category_plan`: 범주형 전처리 계획
+- `outlier_plan`: 이상치 전처리 계획
+- `nulldata_plan`: 결측값 전처리 계획
+- `corr_plan`: 상관관계 전처리 계획
+
+#### 💻 CODING STATES (5개)
+- `numeric_code`: 수치형 전처리 코드
+- `category_code`: 범주형 전처리 코드
+- `outlier_code`: 이상치 전처리 코드
+- `nulldata_code`: 결측값 전처리 코드
+- `corr_code`: 상관관계 전처리 코드
+
+#### 🔧 EXECUTION STATES (3개)
+- `processed_dataframe`: 최종 전처리된 데이터프레임
+- `execution_results`: 각 전처리 단계별 실행 결과
+- `execution_errors`: 실행 중 발생한 오류들
+
+#### 🐛 DEBUG STATES (4개)
+- `debug_status`: 디버깅 상태
+- `debug_message`: 디버깅 메시지
+- `fixed_preprocessing_code`: 수정된 전처리 코드
+- `debug_analysis`: 디버깅 분석 결과
+
+#### ✅ OUTPUT STATES (2개)
+- `final_answer`: 최종 응답
+- `preprocessing_summary`: 전처리 요약 보고서
+
+## 🚀 설치 및 실행
 
 ### 기본 설치
 ```bash
@@ -71,157 +107,114 @@ pip install -r requirements.txt
 OPENAI_API_KEY=your_api_key_here
 ```
 
-### 테스트 실행
-
-#### RAG 기반 워크플로우 테스트
+### 새로운 워크플로우 실행
 ```bash
-python test_rag_workflow.py
+python new_workflow_graph.py
 ```
 
-#### 기존 시스템 테스트
+### 디버깅 기능 테스트
 ```bash
-python main.py
+python test_debug_workflow.py
 ```
 
-## Knowledge Base 관리
+## 🐛 디버깅 기능
 
-### Knowledge Base 구조
-Knowledge Base는 JSON 파일로 관리되며, 각 전처리 기법은 다음 구조를 가집니다:
-
-```json
-{
-  "category_name": {
-    "description": "카테고리 설명",
-    "techniques": [
-      {
-        "name": "기법 이름",
-        "code": "실행 가능한 Python 코드",
-        "description": "기법 설명",
-        "use_case": "사용 사례",
-        "keywords": ["키워드1", "키워드2", ...]
-      }
-    ]
-  }
-}
-```
-
-### Knowledge Base 관리 도구
-
-#### 관리 도구 실행
-```bash
-python KB_rag_agents/manage_kb.py
-```
+### 🔧 Code Debug Agent
+전처리 코드 실행 시 발생하는 오류를 자동으로 분석하고 수정하는 전문 에이전트입니다.
 
 #### 주요 기능
-1. **카테고리 목록 보기**: 현재 Knowledge Base의 모든 카테고리 확인
-2. **기법 목록 보기**: 특정 카테고리의 모든 기법 확인
-3. **기법 검색**: 키워드 기반으로 관련 기법 검색
-4. **기법 추가**: 새로운 전처리 기법 추가
-5. **기법 제거**: 기존 기법 제거
-6. **기법 업데이트**: 기존 기법 수정
-7. **임베딩 재생성**: Knowledge Base 변경 후 임베딩 재생성
-8. **Knowledge Base 검증**: 구조 검증
+- **오류 패턴 인식**: target_variable 누락, 컬럼 누락, 데이터 타입 오류 등 일반적인 오류 패턴을 자동으로 인식
+- **지능적 코드 수정**: 오류 유형에 따라 적절한 수정 전략을 적용
+- **안전한 재실행**: 수정된 코드로 자동 재실행하여 전처리 완료 보장
 
-#### 새로운 기법 추가 예시
-```bash
-# 관리 도구 실행
-python KB_rag_agents/manage_kb.py
+#### 지원하는 오류 유형
+1. **target_variable 누락**: 사용 가능한 컬럼 중에서 적절한 target_variable 선택 또는 생성
+2. **컬럼 누락**: 유사한 컬럼 찾기 또는 기본값으로 컬럼 생성
+3. **데이터 타입 오류**: 안전한 데이터 타입 변환 적용
+4. **NaN 처리 오류**: 범주형/수치형에 따른 적절한 결측값 처리
+5. **일반적인 오류**: try-catch 블록으로 안전한 실행 환경 제공
 
-# 메뉴에서 4번 선택 (기법 추가)
-# 카테고리: missing_values
-# 기법 이름: custom_imputation
-# 코드: # 사용자 정의 결측값 처리 코드
-# 설명: 사용자 정의 결측값 처리 방법
-# 사용 사례: 특별한 도메인 지식이 필요한 경우
-# 키워드: custom, domain, knowledge
+#### 워크플로우 통합
+- Execution Layer에서 오류 발생 시 자동으로 Debug Agent로 전달
+- 디버깅 성공 시 수정된 코드로 재실행
+- 디버깅 실패 시 오류 정보와 함께 최종 응답 생성
+
+## 📁 프로젝트 구조
+
+```
+Viz2prep-VisualizationToPreprocessing/
+├── new_workflow_graph.py          # 메인 워크플로우 실행 파일
+├── workflow_state.py              # 워크플로우 State 정의
+├── agents/                        # 전문화된 에이전트들
+│   ├── eda_nodes.py              # EDA 노드들 (5개)
+│   ├── planning_nodes.py         # Planning 노드들 (5개)
+│   ├── coding_nodes.py           # Coding 노드들 (5개)
+│   ├── execution_response_nodes.py # Execution & Response 노드들 (2개)
+│   ├── eda_agents/               # 기존 EDA 에이전트들 (참조용)
+│   └── preprocessing_agents/     # 기존 전처리 에이전트들 (참조용)
+├── KB_rag_agents/                # Knowledge Base RAG 시스템
+│   ├── KB_rag_agent.py          # RAG Agent
+│   └── knowledge_base/          # Knowledge Base
+├── generated_plots/              # 생성된 시각화 파일들
+├── datasets/                     # 데이터셋
+└── requirements.txt              # 의존성 패키지
 ```
 
-### Knowledge Base 확장
+## 🎯 주요 특징
 
-#### 1. 새로운 카테고리 추가
+### 1. 디버깅 친화적 설계
+- **상세한 주석**: 모든 노드에 입출력 state와 다음 엣지 명시
+- **실행 추적**: 각 단계별 상태 변화와 결과 출력
+- **오류 처리**: 실패한 단계도 추적하여 디버깅 정보 제공
+
+### 2. 모듈화 및 확장성
+- **도메인별 전문화**: 각 에이전트가 특정 영역에 집중
+- **Knowledge Base 활용**: 검증된 전처리 기법들 자동 검색
+- **유연한 그래프 구조**: 새로운 노드 추가 용이
+
+### 3. 상태 관리
+- **22개 State 체계**: 전체 워크플로우 상태를 명확히 정의
+- **노드별 역할 분담**: 각 노드가 담당하는 state 명확히 구분
+- **엣지 연결성**: 어떤 state가 어느 노드로 전달되는지 추적 가능
+
+## 📈 성과 지표
+
+- **✅ 노드 수**: 17개 (EDA 5개 + Planning 5개 + Coding 5개 + Execution 1개 + Response 1개)
+- **✅ State 수**: 22개 (체계적 상태 관리)
+- **✅ 전문화 도메인**: 5개 (수치형, 범주형, 이상치, 결측값, 상관관계)
+- **✅ 디버깅 주석**: 각 노드별 상세 입출력 및 엣지 정보
+- **✅ Knowledge Base 연동**: 모든 코더 노드에서 KB 활용
+
+## 🔄 워크플로우 실행 예시
+
 ```python
-# manage_kb.py에서 기법 추가 시 새로운 카테고리 이름 입력
-# 자동으로 새 카테고리가 생성됩니다
-```
+from new_workflow_graph import build_specialized_workflow
 
-#### 2. 기존 카테고리 확장
-```python
-# 기존 카테고리에 새로운 기법 추가
-# 예: missing_values 카테고리에 새로운 결측값 처리 방법 추가
-```
+# 워크플로우 구축
+workflow = build_specialized_workflow()
 
-#### 3. 임베딩 업데이트
-```bash
-# Knowledge Base 변경 후 반드시 임베딩 재생성
-python KB_rag_agents/manage_kb.py
-# 메뉴에서 7번 선택 (임베딩 재생성)
-```
-
-## 사용 예시
-
-### RAG 기반 전처리 워크플로우
-
-```python
-from planning_agents.planning_agent import planning_agent
-from KB_rag_agents.KB_rag_agent import kb_rag_agent
-
-# 1. EDA 결과 준비
-eda_results = {
-    'text_analysis': '데이터 분석 결과...',
-    'null_analysis_text': '결측값 분석...',
-    'outlier_analysis_text': '이상치 분석...',
-    # ... 기타 분석 결과
+# 초기 상태 설정
+initial_state = {
+    "query": "이 데이터를 머신러닝 모델 학습에 적합하도록 전처리해주세요.",
+    "dataframe": your_dataframe
 }
 
-# 2. Planning Agent 실행
-planning_result = planning_agent.invoke(eda_results)
+# 워크플로우 실행
+result = workflow.invoke(initial_state)
 
-# 3. KB RAG Agent 실행
-rag_result = kb_rag_agent.invoke({
-    **eda_results,
-    'planning_info': planning_result['planning_info']
-})
-
-# 4. 생성된 코드 사용
-generated_code = rag_result['generated_preprocessing_code']
+# 결과 확인
+print(result["final_answer"])
+print(result["preprocessing_summary"])
 ```
 
-## 주요 특징
+## 🤝 기여하기
 
-### 1. 지식 기반 접근
-- 검증된 전처리 코드 예제 데이터베이스
-- 유사도 기반 관련 코드 검색
-- 일관성 있는 코드 생성
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-### 2. 계획 기반 처리
-- EDA 결과 분석을 통한 전처리 계획 수립
-- 작업 우선순위 및 의존성 고려
-- 체계적인 전처리 파이프라인
+## 📄 라이선스
 
-### 3. 멀티모달 LLM 활용
-- 텍스트와 이미지 모두 활용
-- OpenAI GPT-4o-mini 모델 사용
-- 임베딩 기반 유사도 검색
-
-### 4. 확장 가능한 구조
-- 새로운 전처리 기법 쉽게 추가
-- Knowledge Base 지속적 확장
-- 모듈화된 에이전트 구조
-
-### 5. Knowledge Base 관리
-- JSON 기반 구조화된 Knowledge Base
-- 관리 도구를 통한 쉬운 확장
-- 임베딩 기반 유사도 검색
-
-## 기술 스택
-
-- **LLM**: OpenAI GPT-4o-mini
-- **Embedding**: OpenAI text-embedding-3-small
-- **RAG**: Cosine Similarity 기반 검색
-- **Data Processing**: Pandas, NumPy, Scikit-learn
-- **Visualization**: Matplotlib, Seaborn
-- **Framework**: LangChain, LangGraph
-
-## 라이선스
-
-MIT License 
+이 프로젝트는 MIT 라이선스 하에 배포됩니다. 

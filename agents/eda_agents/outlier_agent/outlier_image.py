@@ -55,7 +55,7 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         box_plot['fliers'][0].set_markerfacecolor('red')
         box_plot['fliers'][0].set_markeredgecolor('red')
         
-        plt.title(f'{col} 박스플롯')
+        plt.title(f'{col} Boxplot')
         plt.ylabel(col)
         
         # 이상치 개수 표시
@@ -67,7 +67,7 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
         
         if len(outliers) > 0:
-            plt.text(0.02, 0.98, f'이상치: {len(outliers)}개', 
+            plt.text(0.02, 0.98, f'Outliers: {len(outliers)}', 
                     transform=plt.gca().transAxes, verticalalignment='top',
                     bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
     
@@ -92,17 +92,17 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         plt.hist(z_scores, bins=30, alpha=0.7, edgecolor='black')
         plt.axvline(x=-3, color='red', linestyle='--', alpha=0.7, label='Z=-3')
         plt.axvline(x=3, color='red', linestyle='--', alpha=0.7, label='Z=3')
-        plt.axvline(x=0, color='green', linestyle='-', alpha=0.7, label='평균')
+        plt.axvline(x=0, color='green', linestyle='-', alpha=0.7, label='Mean')
         
-        plt.title(f'{col} Z-Score 분포')
+        plt.title(f'{col} Z-Score Distribution')
         plt.xlabel('Z-Score')
-        plt.ylabel('빈도')
+        plt.ylabel('Frequency')
         plt.legend()
         
         # 이상치 개수 표시
         outliers = df[np.abs(z_scores) > 3]
         if len(outliers) > 0:
-            plt.text(0.02, 0.98, f'이상치: {len(outliers)}개', 
+            plt.text(0.02, 0.98, f'Outliers: {len(outliers)}', 
                     transform=plt.gca().transAxes, verticalalignment='top',
                     bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
     
@@ -145,9 +145,9 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     width = 0.35
     plt.bar(x - width/2, comparison_df['iqr_outliers'], width, label='IQR', alpha=0.7)
     plt.bar(x + width/2, comparison_df['zscore_outliers'], width, label='Z-Score', alpha=0.7)
-    plt.title('IQR vs Z-Score 이상치 개수 비교')
-    plt.xlabel('변수')
-    plt.ylabel('이상치 개수')
+    plt.title('IQR vs Z-Score Outlier Count Comparison')
+    plt.xlabel('Variable')
+    plt.ylabel('Outlier Count')
     plt.xticks(x, comparison_df['column'], rotation=45, ha='right')
     plt.legend()
     
@@ -156,9 +156,9 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     zscore_percentages = (comparison_df['zscore_outliers'] / comparison_df['total_data']) * 100
     plt.bar(x - width/2, iqr_percentages, width, label='IQR', alpha=0.7)
     plt.bar(x + width/2, zscore_percentages, width, label='Z-Score', alpha=0.7)
-    plt.title('IQR vs Z-Score 이상치 비율 비교')
-    plt.xlabel('변수')
-    plt.ylabel('이상치 비율 (%)')
+    plt.title('IQR vs Z-Score Outlier Ratio Comparison')
+    plt.xlabel('Variable')
+    plt.ylabel('Outlier Ratio (%)')
     plt.xticks(x, comparison_df['column'], rotation=45, ha='right')
     plt.legend()
     
@@ -166,16 +166,16 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     difference = comparison_df['iqr_outliers'] - comparison_df['zscore_outliers']
     colors = ['red' if x > 0 else 'blue' for x in difference]
     plt.bar(x, difference, color=colors, alpha=0.7)
-    plt.title('IQR - Z-Score 이상치 개수 차이')
-    plt.xlabel('변수')
-    plt.ylabel('개수 차이')
+    plt.title('IQR - Z-Score Outlier Count Difference')
+    plt.xlabel('Variable')
+    plt.ylabel('Count Difference')
     plt.xticks(x, comparison_df['column'], rotation=45, ha='right')
     plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
     
     plt.subplot(2, 2, 4)
     total_outliers = comparison_df['iqr_outliers'] + comparison_df['zscore_outliers']
     plt.pie(total_outliers, labels=comparison_df['column'], autopct='%1.1f%%')
-    plt.title('전체 이상치 분포')
+    plt.title('Total Outlier Distribution')
     
     plt.tight_layout()
     comparison_path = "generated_plots/outlier_comparison.png"
@@ -207,10 +207,10 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     
     # 히트맵 생성
     sns.heatmap(outlier_matrix, cbar=True, cmap='RdYlBu_r', 
-               cbar_kws={'label': '이상치 유형'})
-    plt.title('이상치 히트맵 (0: 정상, 1: IQR, 2: Z-Score, 3: 둘 다)')
-    plt.xlabel('변수')
-    plt.ylabel('행')
+               cbar_kws={'label': 'Outlier Type'})
+    plt.title('Outlier Heatmap (0: Normal, 1: IQR, 2: Z-Score, 3: Both)')
+    plt.xlabel('Variable')
+    plt.ylabel('Row')
     plt.tight_layout()
     heatmap_path = "generated_plots/outlier_heatmap.png"
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
@@ -224,7 +224,7 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         plt.subplot(n_rows, n_cols, i + 1)
         
         # 원본 데이터 분포
-        plt.hist(df[col], bins=30, alpha=0.7, label='원본', color='blue')
+        plt.hist(df[col], bins=30, alpha=0.7, label='Original', color='blue')
         
         # 이상치 제거 후 분포
         Q1 = df[col].quantile(0.25)
@@ -235,16 +235,16 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         clean_data = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)][col]
         
         if len(clean_data) > 0:
-            plt.hist(clean_data, bins=30, alpha=0.7, label='이상치 제거', color='green')
+            plt.hist(clean_data, bins=30, alpha=0.7, label='Outlier Removed', color='green')
         
-        plt.title(f'{col} 이상치 처리 전후 비교')
+        plt.title(f'{col} Outlier Handling Comparison')
         plt.xlabel(col)
-        plt.ylabel('빈도')
+        plt.ylabel('Frequency')
         plt.legend()
         
         # 이상치 비율 표시
         outlier_ratio = (len(df) - len(clean_data)) / len(df) * 100
-        plt.text(0.02, 0.98, f'이상치: {outlier_ratio:.1f}%', 
+        plt.text(0.02, 0.98, f'Outliers: {outlier_ratio:.1f}%', 
                 transform=plt.gca().transAxes, verticalalignment='top',
                 bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
     
@@ -269,11 +269,11 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
         outlier_ratio = len(outliers) / len(df) * 100
         
         if outlier_ratio < 5:
-            level = '낮음'
+            level = 'Low'
         elif outlier_ratio < 15:
-            level = '보통'
+            level = 'Normal'
         else:
-            level = '높음'
+            level = 'High'
         
         outlier_levels.append({
             'column': col,
@@ -287,30 +287,30 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     plt.subplot(2, 2, 1)
     level_counts = outlier_df['level'].value_counts()
     plt.pie(level_counts.values, labels=level_counts.index, autopct='%1.1f%%')
-    plt.title('이상치 수준 분포')
+    plt.title('Outlier Level Distribution')
     
     # 이상치 비율 분포
     plt.subplot(2, 2, 2)
     plt.bar(outlier_df['column'], outlier_df['outlier_ratio'])
-    plt.title('변수별 이상치 비율')
-    plt.ylabel('이상치 비율 (%)')
+    plt.title('Variable Outlier Ratio')
+    plt.ylabel('Outlier Ratio (%)')
     plt.xticks(rotation=45, ha='right')
     
     # 수준별 색상 구분
     plt.subplot(2, 2, 3)
-    colors = {'낮음': 'green', '보통': 'orange', '높음': 'red'}
+    colors = {'Low': 'green', 'Normal': 'orange', 'High': 'red'}
     color_list = [colors[level] for level in outlier_df['level']]
     plt.bar(outlier_df['column'], outlier_df['outlier_ratio'], color=color_list)
-    plt.title('이상치 수준별 색상 구분')
-    plt.ylabel('이상치 비율 (%)')
+    plt.title('Outlier Level Color Coding')
+    plt.ylabel('Outlier Ratio (%)')
     plt.xticks(rotation=45, ha='right')
     
     # 이상치 비율 히스토그램
     plt.subplot(2, 2, 4)
     plt.hist(outlier_df['outlier_ratio'], bins=10, alpha=0.7, edgecolor='black')
-    plt.title('이상치 비율 분포')
-    plt.xlabel('이상치 비율 (%)')
-    plt.ylabel('변수 개수')
+    plt.title('Outlier Ratio Distribution')
+    plt.xlabel('Outlier Ratio (%)')
+    plt.ylabel('Variable Count')
     
     plt.tight_layout()
     level_path = "generated_plots/outlier_levels.png"
@@ -318,7 +318,7 @@ def create_outlier_visualizations(inputs: Dict[str, Any]) -> Dict[str, Any]:
     plt.close()
     image_paths.append(level_path)
     
-    print(f"이상치 시각화 완료: {len(image_paths)}개 이미지 생성")
+    print(f"Outlier Visualization Complete: {len(image_paths)} images generated")
     
     return {
         **inputs,

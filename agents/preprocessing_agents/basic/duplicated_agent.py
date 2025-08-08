@@ -95,10 +95,34 @@ def handle_duplicates(inputs: Dict[str, Any]) -> Dict[str, Any]:
     
     print(f"중복 처리 완료: 최종 {final_count}행 (제거: {removed_count}행)")
     
+    # 중복 처리 코드 생성
+    preprocessing_code = f"""
+# 중복 데이터 처리 코드
+def handle_duplicate_data(df):
+    \"\"\"중복 데이터를 처리하는 함수\"\"\"
+    df_processed = df.copy()
+    
+    # 중복 처리 정보
+    original_count = {original_count}
+    duplicate_count = {duplicate_count}
+    final_count = {final_count}
+    removed_count = {removed_count}
+    
+    # 중복 제거
+    df_processed = df_processed.drop_duplicates(keep='first')
+    
+    return df_processed
+
+# 사용 예시:
+# df_processed = handle_duplicate_data(df)
+"""
+    
     return {
         **inputs,
         "dataframe": df,
-        "duplicate_info": duplicate_info
+        "duplicate_info": duplicate_info,
+        "code": preprocessing_code,
+        "summary": f"중복 데이터 처리 완료: {removed_count}개 행 제거, 최종 {final_count}행"
     }
 
 

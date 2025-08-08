@@ -13,204 +13,312 @@ from langchain_core.messages import HumanMessage
 
 def handle_missing_data(inputs: Dict[str, Any]) -> Dict[str, Any]:
     """
-    결측값을 처리하는 전처리 함수
+    결측값을 처리하는 전처리 에이전트입니다.
     
     Args:
-        inputs: DataFrame과 처리 방법이 포함된 입력 딕셔너리
+        inputs: X, Y DataFrame과 EDA 결과가 포함된 입력 딕셔너리
         
     Returns:
-        결측값이 처리된 DataFrame이 포함된 딕셔너리
+        전처리된 X, Y DataFrame과 코드가 포함된 딕셔너리
     """
-    df = inputs["dataframe"].copy()
-    method = inputs.get("missing_method", "auto")  # auto, drop, fill, impute
+    print("🔧 [PREPROCESSING] 결측값 처리 시작...")
     
-    # EDA 결과물들 가져오기
-    null_analysis_text = inputs.get("null_analysis_text", "")
-    null_image_paths = inputs.get("null_image_paths", [])
-    corr_analysis_text = inputs.get("corr_analysis_text", "")
-    text_analysis = inputs.get("text_analysis", "")
+    X = inputs["X"]
+    Y = inputs["Y"]
+    eda_results = inputs.get("eda_results", {})
     
-    # 결측값 현황 분석
-    missing_info = {}
-    for col in df.columns:
-        missing_count = df[col].isnull().sum()
-        missing_pct = (missing_count / len(df)) * 100
-        missing_info[col] = {
-            'count': missing_count,
-            'percentage': missing_pct
+    # X와 Y의 결측값 현황 파악
+    X_missing_summary = X.isnull().sum()
+    Y_missing_summary = Y.isnull().sum()
+    X_total_missing = X_missing_summary.sum()
+    Y_total_missing = Y_missing_summary.sum()
+    
+    if X_total_missing == 0 and Y_total_missing == 0:
+        print("✅ [PREPROCESSING] 결측값이 없습니다.")
+        return {
+            **inputs,
+            "preprocessing_code": "# 결측값이 없으므로 처리 불필요",
+            "preprocessing_summary": "결측값 없음"
         }
     
-    print(f"결측값 처리 시작: {method} 방법 사용")
+    print(f"📊 [PREPROCESSING] X 총 {X_total_missing}개, Y 총 {Y_total_missing}개 결측값 발견")
     
-    # MultiModal LLM을 사용한 전처리 코드 생성
-    if method == "auto":
-        preprocessing_code = generate_missing_data_code_with_llm(
-            df, missing_info, null_analysis_text, null_image_paths, 
-            corr_analysis_text, text_analysis
-        )
+    if X_total_missing > 0:
+        print(f"   📋 [PREPROCESSING] X 결측값 분포:")
+        for col, missing_count in X_missing_summary[X_missing_summary > 0].items():
+            missing_ratio = (missing_count / len(X)) * 100
+            print(f"      - {col}: {missing_count}개 ({missing_ratio:.1f}%)")
+    
+    if Y_total_missing > 0:
+        print(f"   📋 [PREPROCESSING] Y 결측값 분포:")
+        for col, missing_count in Y_missing_summary[Y_missing_summary > 0].items():
+            missing_ratio = (missing_count / len(Y)) * 100
+            print(f"      - {col}: {missing_count}개 ({missing_ratio:.1f}%)")
+    
+    # X와 Y의 수치형과 범주형 컬럼 분리
+    X_numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    X_categorical_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+    
+    Y_numeric_cols = Y.select_dtypes(include=[np.number]).columns.tolist()
+    Y_categorical_cols = Y.select_dtypes(include=['object', 'category']).columns.tolist()
+    
+    # 결측값이 있는 컬럼들
+    X_cols_with_missing = X_missing_summary[X_missing_summary > 0].index.tolist()
+    Y_cols_with_missing = Y_missing_summary[Y_missing_summary > 0].index.tolist()
+    
+    print(f"🔍 [PREPROCESSING] 결측값 처리 전략 수립 중...")
+    
+    # X 처리 전략 결정
+    X_preprocessing_steps = []
+    for col in X_cols_with_missing:
+        missing_ratio = (X_missing_summary[col] / len(X)) * 100
         
-        # 생성된 코드 실행
-        try:
-            exec(preprocessing_code)
-            print("LLM 생성 코드로 결측값 처리 완료")
-        except Exception as e:
-            print(f"LLM 생성 코드 실행 오류: {e}")
-            # 폴백: 기본 자동 처리
-            df = apply_basic_missing_data_handling(df, missing_info)
-    else:
-        # 수동 방법 사용
-        df = apply_manual_missing_data_handling(df, method, inputs)
-    
-    # 처리 후 결측값 확인
-    remaining_missing = df.isnull().sum().sum()
-    print(f"결측값 처리 완료: 남은 결측값 {remaining_missing}개")
-    
-    return {
-        **inputs,
-        "dataframe": df,
-        "missing_info": missing_info,
-        "remaining_missing": remaining_missing
-    }
-
-
-def generate_missing_data_code_with_llm(df: pd.DataFrame, missing_info: Dict, 
-                                      null_analysis_text: str, null_image_paths: List[str],
-                                      corr_analysis_text: str, text_analysis: str) -> str:
-    """
-    MultiModal LLM을 사용하여 결측값 처리 코드를 생성합니다.
-    """
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0.1,
-        max_tokens=2000
-    )
-    
-    # 결측값 정보 요약
-    missing_summary = []
-    for col, info in missing_info.items():
-        if info['count'] > 0:
-            missing_summary.append(f"{col}: {info['count']}개 ({info['percentage']:.1f}%)")
-    
-    prompt = f"""
-You are a data preprocessing expert. Please write Python code to handle missing values based on the following information.
-
-=== Dataset Information ===
-- Data size: {df.shape[0]} rows x {df.shape[1]} columns
-- Columns: {list(df.columns)}
-- Data types: {dict(df.dtypes)}
-- Dataset head:
-{df.head().to_string()}
-
-=== Missing Value Status ===
-{chr(10).join(missing_summary)}
-
-=== Missing Value Analysis Results ===
-{null_analysis_text}
-
-=== Correlation Analysis Results ===
-{corr_analysis_text}
-
-=== Overall Data Analysis ===
-{text_analysis}
-
-=== Requirements ===
-1. Drop columns with more than 50% missing values
-2. Fill categorical variables with mode
-3. Fill numerical variables with median
-4. Consider missing value patterns if present
-5. Code must be executable
-
-Please write code in the following format:
-```python
-# Missing value handling code
-# df is an already defined DataFrame
-```
-
-Return only the code without explanations.
-"""
-
-    try:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        code = response.content
-        
-        # 코드 블록에서 실제 코드만 추출
-        if "```python" in code:
-            code = code.split("```python")[1].split("```")[0].strip()
-        elif "```" in code:
-            code = code.split("```")[1].split("```")[0].strip()
-        
-        return code
-    except Exception as e:
-        print(f"LLM 코드 생성 오류: {e}")
-        return ""
-
-
-def apply_basic_missing_data_handling(df: pd.DataFrame, missing_info: Dict) -> pd.DataFrame:
-    """
-    기본 결측값 처리 방법을 적용합니다.
-    """
-    for col in df.columns:
-        missing_pct = missing_info[col]['percentage']
-        
-        if missing_pct > 50:
-            # 결측값이 50% 이상인 경우 컬럼 삭제
-            df = df.drop(columns=[col])
-            print(f"  {col}: 결측값 {missing_pct:.1f}% → 컬럼 삭제")
-        elif missing_pct > 0:
-            # 결측값이 있는 경우 데이터 타입에 따라 처리
-            if df[col].dtype in ['object', 'category']:
-                # 범주형 변수는 최빈값으로 대체
-                mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else "Unknown"
-                df[col] = df[col].fillna(mode_val)
-                print(f"  {col}: 최빈값으로 대체 ({mode_val})")
+        if missing_ratio > 50:
+            # 50% 이상 결측값이 있는 컬럼은 삭제
+            X_preprocessing_steps.append({
+                'column': col,
+                'action': 'drop',
+                'reason': f'결측값 비율이 {missing_ratio:.1f}%로 높음'
+            })
+            print(f"   🗑️  [PREPROCESSING] X {col}: 삭제 (결측값 {missing_ratio:.1f}%)")
+        else:
+            # 50% 미만인 경우 적절한 방법으로 채우기
+            if col in X_numeric_cols:
+                X_preprocessing_steps.append({
+                    'column': col,
+                    'action': 'fill_median',
+                    'reason': '수치형 변수이므로 중앙값으로 채움'
+                })
+                print(f"   📊 [PREPROCESSING] X {col}: 중앙값으로 채움")
             else:
-                # 수치형 변수는 중앙값으로 대체
-                median_val = df[col].median()
-                df[col] = df[col].fillna(median_val)
-                print(f"  {col}: 중앙값으로 대체 ({median_val:.2f})")
+                X_preprocessing_steps.append({
+                    'column': col,
+                    'action': 'fill_mode',
+                    'reason': '범주형 변수이므로 최빈값으로 채움'
+                })
+                print(f"   📊 [PREPROCESSING] X {col}: 최빈값으로 채움")
     
-    return df
-
-
-def apply_manual_missing_data_handling(df: pd.DataFrame, method: str, inputs: Dict) -> pd.DataFrame:
-    """
-    수동 결측값 처리 방법을 적용합니다.
-    """
-    if method == "drop":
-        # 결측값이 있는 행 삭제
-        original_len = len(df)
-        df = df.dropna()
-        dropped_count = original_len - len(df)
-        print(f"  결측값이 있는 행 {dropped_count}개 삭제")
-    
-    elif method == "fill":
-        # 사용자 지정 값으로 대체
-        fill_value = inputs.get("fill_value", 0)
-        df = df.fillna(fill_value)
-        print(f"  모든 결측값을 {fill_value}로 대체")
-    
-    elif method == "impute":
-        # 고급 대체 방법 (평균, 중앙값, 최빈값)
-        impute_method = inputs.get("impute_method", "median")
+    # Y 처리 전략 결정
+    Y_preprocessing_steps = []
+    for col in Y_cols_with_missing:
+        missing_ratio = (Y_missing_summary[col] / len(Y)) * 100
         
-        for col in df.columns:
-            if df[col].isnull().sum() > 0:
-                if impute_method == "mean" and df[col].dtype in [np.number]:
-                    df[col] = df[col].fillna(df[col].mean())
-                elif impute_method == "median" and df[col].dtype in [np.number]:
-                    df[col] = df[col].fillna(df[col].median())
-                elif impute_method == "mode":
-                    mode_val = df[col].mode().iloc[0] if not df[col].mode().empty else "Unknown"
-                    df[col] = df[col].fillna(mode_val)
-                elif impute_method == "forward":
-                    df[col] = df[col].fillna(method='ffill')
-                elif impute_method == "backward":
-                    df[col] = df[col].fillna(method='bfill')
-        
-        print(f"  {impute_method} 방법으로 결측값 대체")
+        if missing_ratio > 50:
+            # 50% 이상 결측값이 있는 컬럼은 삭제
+            Y_preprocessing_steps.append({
+                'column': col,
+                'action': 'drop',
+                'reason': f'결측값 비율이 {missing_ratio:.1f}%로 높음'
+            })
+            print(f"   🗑️  [PREPROCESSING] Y {col}: 삭제 (결측값 {missing_ratio:.1f}%)")
+        else:
+            # 50% 미만인 경우 적절한 방법으로 채우기
+            if col in Y_numeric_cols:
+                Y_preprocessing_steps.append({
+                    'column': col,
+                    'action': 'fill_median',
+                    'reason': '수치형 변수이므로 중앙값으로 채움'
+                })
+                print(f"   📊 [PREPROCESSING] Y {col}: 중앙값으로 채움")
+            else:
+                Y_preprocessing_steps.append({
+                    'column': col,
+                    'action': 'fill_mode',
+                    'reason': '범주형 변수이므로 최빈값으로 채움'
+                })
+                print(f"   📊 [PREPROCESSING] Y {col}: 최빈값으로 채움")
     
-    return df
+    # 전처리 코드 생성
+    print("💻 [PREPROCESSING] 전처리 코드 생성 중...")
+    
+    code_lines = [
+        "# 결측값 처리 (X/Y 분리)",
+        "import pandas as pd",
+        "import numpy as np",
+        "",
+        "def handle_missing_values(X, Y):",
+        "    \"\"\"X와 Y의 결측값을 처리하는 함수\"\"\"",
+        "    X_processed = X.copy()",
+        "    Y_processed = Y.copy()",
+        ""
+    ]
+    
+    # X 처리 코드 추가
+    if X_preprocessing_steps:
+        code_lines.append("    # X 결측값 처리")
+        for step in X_preprocessing_steps:
+            col = step['column']
+            action = step['action']
+            
+            if action == 'drop':
+                code_lines.append(f"    X_processed = X_processed.drop(columns=['{col}'])")
+                code_lines.append(f"    print(f'X 컬럼 {col} 삭제됨')")
+            elif action == 'fill_median':
+                code_lines.append(f"    X_processed['{col}'] = X_processed['{col}'].fillna(X_processed['{col}'].median())")
+                code_lines.append(f"    print(f'X 컬럼 {col} 중앙값으로 채움')")
+            elif action == 'fill_mode':
+                code_lines.append(f"    mode_value = X_processed['{col}'].mode().iloc[0] if not X_processed['{col}'].mode().empty else 'unknown'")
+                code_lines.append(f"    X_processed['{col}'] = X_processed['{col}'].fillna(mode_value)")
+                code_lines.append(f"    print(f'X 컬럼 {col} 최빈값으로 채움')")
+        code_lines.append("")
+    
+    # Y 처리 코드 추가
+    if Y_preprocessing_steps:
+        code_lines.append("    # Y 결측값 처리")
+        for step in Y_preprocessing_steps:
+            col = step['column']
+            action = step['action']
+            
+            if action == 'drop':
+                code_lines.append(f"    Y_processed = Y_processed.drop(columns=['{col}'])")
+                code_lines.append(f"    print(f'Y 컬럼 {col} 삭제됨')")
+            elif action == 'fill_median':
+                code_lines.append(f"    Y_processed['{col}'] = Y_processed['{col}'].fillna(Y_processed['{col}'].median())")
+                code_lines.append(f"    print(f'Y 컬럼 {col} 중앙값으로 채움')")
+            elif action == 'fill_mode':
+                code_lines.append(f"    mode_value = Y_processed['{col}'].mode().iloc[0] if not Y_processed['{col}'].mode().empty else 'unknown'")
+                code_lines.append(f"    Y_processed['{col}'] = Y_processed['{col}'].fillna(mode_value)")
+                code_lines.append(f"    print(f'Y 컬럼 {col} 최빈값으로 채움')")
+        code_lines.append("")
+    
+    code_lines.extend([
+        "    return X_processed, Y_processed",
+        "",
+        "# 전처리 실행",
+        "X_processed, Y_processed = handle_missing_values(X, Y)"
+    ])
+    
+    preprocessing_code = "\n".join(code_lines)
+    
+    # 전처리 실행
+    print("🔄 [PREPROCESSING] 전처리 실행 중...")
+    try:
+        X_processed, Y_processed = apply_basic_missing_data_handling(X, Y, X_preprocessing_steps, Y_preprocessing_steps)
+        
+        print(f"✅ [PREPROCESSING] 전처리 완료")
+        print(f"   📊 [PREPROCESSING] X: {X.shape} → {X_processed.shape}")
+        print(f"   📊 [PREPROCESSING] Y: {Y.shape} → {Y_processed.shape}")
+        
+        return {
+            **inputs,
+            "X_processed": X_processed,
+            "Y_processed": Y_processed,
+            "preprocessing_code": preprocessing_code,
+            "preprocessing_summary": {
+                "X_missing_handled": len(X_preprocessing_steps),
+                "Y_missing_handled": len(Y_preprocessing_steps),
+                "X_columns_dropped": len([s for s in X_preprocessing_steps if s['action'] == 'drop']),
+                "Y_columns_dropped": len([s for s in Y_preprocessing_steps if s['action'] == 'drop'])
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ [PREPROCESSING] 전처리 실행 오류: {e}")
+        return {
+            **inputs,
+            "preprocessing_code": preprocessing_code,
+            "preprocessing_summary": f"전처리 실행 오류: {str(e)}"
+        }
 
 
-# LangGraph 노드로 사용할 수 있는 함수
-nulldata_agent = RunnableLambda(handle_missing_data)
+def apply_basic_missing_data_handling(X: pd.DataFrame, Y: pd.DataFrame, 
+                                    X_steps: List[Dict], Y_steps: List[Dict]) -> tuple:
+    """
+    기본적인 결측값 처리 방법을 적용합니다.
+    
+    Args:
+        X: 특성 변수 데이터프레임
+        Y: 타겟 변수 데이터프레임
+        X_steps: X 처리 단계들
+        Y_steps: Y 처리 단계들
+        
+    Returns:
+        tuple: (X_processed, Y_processed) 처리된 데이터프레임들
+    """
+    X_processed = X.copy()
+    Y_processed = Y.copy()
+    
+    # X 처리
+    for step in X_steps:
+        col = step['column']
+        action = step['action']
+        
+        if action == 'drop':
+            X_processed = X_processed.drop(columns=[col])
+        elif action == 'fill_median':
+            X_processed[col] = X_processed[col].fillna(X_processed[col].median())
+        elif action == 'fill_mode':
+            mode_value = X_processed[col].mode().iloc[0] if not X_processed[col].mode().empty else 'unknown'
+            X_processed[col] = X_processed[col].fillna(mode_value)
+    
+    # Y 처리
+    for step in Y_steps:
+        col = step['column']
+        action = step['action']
+        
+        if action == 'drop':
+            Y_processed = Y_processed.drop(columns=[col])
+        elif action == 'fill_median':
+            Y_processed[col] = Y_processed[col].fillna(Y_processed[col].median())
+        elif action == 'fill_mode':
+            mode_value = Y_processed[col].mode().iloc[0] if not Y_processed[col].mode().empty else 'unknown'
+            Y_processed[col] = Y_processed[col].fillna(mode_value)
+    
+    return X_processed, Y_processed
+
+
+def apply_manual_missing_data_handling(X: pd.DataFrame, Y: pd.DataFrame, 
+                                     method: str, inputs: Dict) -> tuple:
+    """
+    사용자가 지정한 방법으로 결측값을 처리합니다.
+    
+    Args:
+        X: 특성 변수 데이터프레임
+        Y: 타겟 변수 데이터프레임
+        method: 처리 방법
+        inputs: 추가 입력 정보
+        
+    Returns:
+        tuple: (X_processed, Y_processed) 처리된 데이터프레임들
+    """
+    X_processed = X.copy()
+    Y_processed = Y.copy()
+    
+    if method == "drop_all":
+        # 모든 결측값이 있는 행 삭제
+        combined_df = pd.concat([X_processed, Y_processed], axis=1)
+        combined_df = combined_df.dropna()
+        split_index = len(X_processed.columns)
+        X_processed = combined_df.iloc[:, :split_index]
+        Y_processed = combined_df.iloc[:, split_index:]
+        
+    elif method == "fill_zero":
+        # 모든 결측값을 0으로 채우기
+        X_processed = X_processed.fillna(0)
+        Y_processed = Y_processed.fillna(0)
+        
+    elif method == "fill_mean":
+        # 수치형 컬럼의 결측값을 평균으로 채우기
+        X_numeric = X_processed.select_dtypes(include=[np.number])
+        Y_numeric = Y_processed.select_dtypes(include=[np.number])
+        
+        X_processed[X_numeric.columns] = X_numeric.fillna(X_numeric.mean())
+        Y_processed[Y_numeric.columns] = Y_numeric.fillna(Y_numeric.mean())
+        
+        # 범주형 컬럼은 최빈값으로 채우기
+        X_categorical = X_processed.select_dtypes(include=['object', 'category'])
+        Y_categorical = Y_processed.select_dtypes(include=['object', 'category'])
+        
+        for col in X_categorical.columns:
+            mode_value = X_processed[col].mode().iloc[0] if not X_processed[col].mode().empty else 'unknown'
+            X_processed[col] = X_processed[col].fillna(mode_value)
+            
+        for col in Y_categorical.columns:
+            mode_value = Y_processed[col].mode().iloc[0] if not Y_processed[col].mode().empty else 'unknown'
+            Y_processed[col] = Y_processed[col].fillna(mode_value)
+    
+    return X_processed, Y_processed
+
+
+# LangChain Runnable으로 등록
+missing_data_agent = RunnableLambda(handle_missing_data)

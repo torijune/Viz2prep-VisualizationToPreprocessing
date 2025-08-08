@@ -94,10 +94,20 @@ def select_features(inputs: Dict[str, Any]) -> Dict[str, Any]:
     print(f"  선택된 특성: {len(final_columns)}개")
     print(f"  제거된 특성: {len(original_features) - len(final_columns)}개")
     
+    # LLM 생성 코드를 포함한 결과 반환
+    preprocessing_code = ""
+    if method == "auto":
+        preprocessing_code = generate_feature_selection_code_with_llm(
+            df, X, y, original_features, corr_analysis_text, corr_image_paths,
+            numeric_analysis_text, text_analysis, n_features, threshold
+        )
+    
     return {
         **inputs,
         "dataframe": df,
-        "selection_info": selection_info
+        "selection_info": selection_info,
+        "code": preprocessing_code,
+        "summary": f"특성 선택 완료: {len(final_columns)}개 선택, {len(original_features) - len(final_columns)}개 제거"
     }
 
 

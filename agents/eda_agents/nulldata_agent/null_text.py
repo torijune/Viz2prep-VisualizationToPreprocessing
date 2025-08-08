@@ -155,8 +155,14 @@ def analyze_null_data_text(inputs: Dict[str, Any]) -> Dict[str, Any]:
     
     return {
         **inputs,
-        "dataframe": df,
-        "null_analysis_text": null_analysis_text
+        "null_analysis": {
+            "total_missing": total_missing,
+            "missing_ratio": missing_ratio,
+            "columns_with_missing": columns_with_missing.index.tolist(),
+            "missing_counts": missing_counts.to_dict(),
+            "missing_percentages": missing_percentages.to_dict(),
+            "analysis_text": null_analysis_text
+        }
     }
 
 
